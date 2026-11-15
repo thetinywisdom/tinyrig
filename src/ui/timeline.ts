@@ -63,7 +63,7 @@ export class Timeline {
         ] as [string, string, () => void][]).map(([id, text, run]) => h('button', { id, onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); run(); } }, text)))),
       h('button', { id: 'set-key', class: 'primary', disabled: !actor || actor.role === 'extra', title: 'Store this pose at this frame (K)', onclick: () => ed.setKeyHere() }, key ? 'Update key' : 'Set key'),
       h('button', { id: 'delete-key', disabled: !key, onclick: () => ed.deleteKeyHere() }, 'Delete key'),
-      h('details', { class: 'menu up tl-more', open: this.moreOpen, ontoggle: (e: Event) => { this.moreOpen = (e.target as HTMLDetailsElement).open; } },
+      h('details', { class: 'menu up tl-more', open: this.moreOpen || this.ed.openAll, ontoggle: (e: Event) => { this.moreOpen = (e.target as HTMLDetailsElement).open; } },
         h('summary', {}, 'Timeline options'),
         h('div', { class: 'menu-items' },
           h('div', { class: 'opt' }, h('span', {}, 'Timing for the shot'),

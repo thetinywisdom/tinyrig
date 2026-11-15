@@ -1,6 +1,10 @@
 :root {
   --bg: #f6f7f9; --surface: #ffffff; --ink: #1f2430; --muted: #5f6878; --line: #d9dde5;
   --accent: #c7421f; --accent-soft: #fdeee9; --warn: #8a5a00; --warn-soft: #fff4d6; --ok: #1d6b45;
+  /* Motion (see .claude/skills/design-engineering-craft): never ease-in on UI. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px; color: var(--ink);
 }
 * { box-sizing: border-box; }
@@ -10,11 +14,18 @@ h1 { font-size: 22px; margin: 0 0 16px; }
 h2 { font-size: 18px; margin: 24px 0 4px; }
 h3 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--muted); }
+/* Press feedback on every button; colour changes ease. Only transform and colours, never `all`. */
+button { transition: transform 120ms var(--ease-out), border-color 150ms ease, background-color 150ms ease; }
+button:active:not(:disabled) { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) { border-color: var(--muted); }
+}
 button:disabled { opacity: 0.4; cursor: default; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-button.link { border: 0; background: none; padding: 0 6px 0 0; color: var(--accent); text-decoration: underline; }
+/* Links are plain underlined text. Red is kept for the one main action on a screen. */
+button.link { border: 0; background: none; padding: 0 6px 0 0; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+button.link:active:not(:disabled) { transform: none; }
 .meta { color: var(--muted); margin: 4px 0; }
 .pill { font-size: 11px; font-weight: 600; background: var(--accent-soft); color: var(--accent); border-radius: 99px; padding: 1px 8px; margin-left: 8px; }
 
@@ -131,7 +142,9 @@ select.name { font-weight: 600; font-size: 15px; }
 .menu[open] summary { border-color: var(--ink); }
 .menu-items { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 250px; display: grid; gap: 2px; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(31, 36, 48, 0.16); }
 .menu-items button { border: 0; text-align: left; }
-.menu-items button:hover { background: var(--bg); }
+@media (hover: hover) and (pointer: fine) { .menu-items button:hover { background: var(--bg); } }
+.menu-items { transform-origin: top right; }
+.menu.up .menu-items { transform-origin: bottom right; }
 .save-status { margin: 0; white-space: nowrap; }
 #back { margin-bottom: 16px; }
 
@@ -213,7 +226,7 @@ select.name { font-weight: 600; font-size: 15px; }
 .more-title { margin: 14px 16px 4px; }
 .more { border-bottom: 1px solid var(--line); }
 .more > summary { cursor: pointer; padding: 10px 16px; font-weight: 600; list-style-position: inside; }
-.more > summary:hover { background: var(--bg); }
+@media (hover: hover) and (pointer: fine) { .more > summary:hover { background: var(--bg); } }
 .more-body { padding: 4px 16px 14px; }
 .menu.up .menu-items { top: auto; bottom: calc(100% + 4px); min-width: 270px; gap: 8px; padding: 12px; }
 .menu-items .opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -221,7 +234,15 @@ select.name { font-weight: 600; font-size: 15px; }
 .menu-items .opt button, .menu-items .seg button { border: 1px solid var(--line); text-align: center; }
 .menu-items .save-status { padding: 4px 8px 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .level { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
-details.naming > summary { cursor: pointer; font-weight: 600; padding: 12px 0; color: var(--accent); }
+details.naming > summary { cursor: pointer; font-weight: 600; padding: 12px 0; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .timeline { height: auto; max-height: 240px; }
 .tl-body { min-height: 72px; max-height: 190px; }
 [hidden] { display: none !important; }
+
+/* Save state in the top bar: plain text, no motion, because it changes after every edit. */
+.save-state { color: var(--muted); font-size: 12.5px; white-space: nowrap; min-width: 64px; text-align: right; }
+
+/* Reduced motion: keep fades and colour, drop movement. */
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled) { transform: none; }
+}

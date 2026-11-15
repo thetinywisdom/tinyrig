@@ -5,6 +5,7 @@ import {
 } from './project/store';
 import { h } from './ui/dom';
 import { Editor } from './ui/editor';
+import { installPopovers } from './ui/motion';
 import { mountImporter, type Imported, type ImportMode } from './ui/importer';
 
 const app = document.getElementById('app')!;
@@ -14,18 +15,28 @@ let shotName: string | undefined;
 let folder: FileSystemDirectoryHandle | null = null;
 let savedInBrowser = true;
 let saveTimer = 0;
+let saving = false;
+installPopovers();
+
+/** The short save state in the top bar. Plain text, no motion: it changes after every edit. */
+const saveState = () => (saving ? 'Saving…' : savedInBrowser || folder ? 'Saved ✓' : 'Not saved');
+const showSaveState = () => { const el = document.getElementById('save-state'); if (el) el.textContent = saveState(); };
 
 const message = (text: string) => app.replaceChildren(h('main', { class: 'importer' }, h('p', { class: 'status', role: 'status' }, text)));
 
 /** Every change is saved to this browser, and to the project folder once one is chosen. */
 function save() {
   clearTimeout(saveTimer);
+  saving = true;
+  showSaveState();
   saveTimer = window.setTimeout(async () => {
     const files = projectToFiles(project);
     savedInBrowser = await saveToBrowser(files);
     if (folder) {
       try { await writeFolder(folder, files); } catch { folder = null; }
     }
+    saving = false;
+    showSaveState();
   }, 400);
 }
 
@@ -107,6 +118,7 @@ async function openEditor(addCharacterNamed?: string) {
     onChanged: save,
     onShot: (name) => { closeEditor(); shotName = name; openEditor(); },
     importCharacter: showImporter, download, menu,
+    saveState,
     status: () => (folder ? `Saving to “${folder.name}”` : savedInBrowser ? 'Saved in this browser' : 'Not saved: browser storage is off'),
   });
   save();

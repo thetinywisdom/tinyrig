@@ -2,6 +2,7 @@
 // This file holds the state, drawing, undo and stage interactions; the panels
 // and the timeline live in their own files and talk to this class.
 import { AudioEngine } from '../audio/audio';
+import { EASE_DRAWER, enter } from './motion';
 import {
   apply, boneMatrices, canBend, clampToLimit, defaultVariant, invert, normDeg, restPose, rootMatrix, solveLimbIK, swapOptions, swingAround,
 } from '../model/pose';
@@ -51,6 +52,8 @@ export interface EditorContext {
   download: (name: string, bytes: Uint8Array, type: string) => void;
   menu: () => { label: string; run: () => void }[];
   status: () => string;
+  /** Short save state for the top bar: "Saving…", "Saved ✓" or a warning. */
+  saveState: () => string;
 }
 
 /** The path through the tool, left to right. Capture is part of Animate. */
@@ -233,6 +236,7 @@ export class Editor {
     setKey(actor, this.frame, pose);
     this.unsaved.delete(actor.id);
     this.refresh();
+    this.say(`Key set · frame ${this.frame + 1}`);
   }
   deleteKeyHere(actor = this.sel()) {
     if (!actor) return;
@@ -480,6 +484,8 @@ export class Editor {
     this.layout();
     this.renderBars();
     this.renderPanel();
+    // Opened now and then, so it may move: a short slide in from the right edge. Closing is instant.
+    if (open) enter(this.panel, 'translateX(16px)', 220, EASE_DRAWER);
     // The stage just changed width: keep the frame centred in it.
     requestAnimationFrame(() => { this.stage.app.resize(); this.fitView(); this.redraw(); });
   }
@@ -620,6 +626,7 @@ export class Editor {
       h('span', { class: 'grow' }),
       h('button', { id: 'undo', title: 'Undo (Ctrl+Z)', disabled: !this.undoStack.length, onclick: this.undo }, 'Undo'),
       h('button', { id: 'redo', title: 'Redo (Ctrl+Shift+Z)', disabled: !this.redoStack.length, onclick: this.redo }, 'Redo'),
+      h('span', { class: 'save-state', id: 'save-state', role: 'status' }, ctx.saveState()),
       h('details', { class: 'menu' },
         h('summary', {}, 'Project'),
         h('div', { class: 'menu-items' },

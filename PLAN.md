@@ -4,6 +4,15 @@ Read this first if you are picking the project up. It says what the tool is, wha
 what is built, how the code is laid out, how to check your work, and what to do next.
 `README.md` is the user-facing guide; this file is for whoever works on the code.
 
+> **New direction (November 2026).** The owner's improvement plan is in [`docs/improvement-plan.md`](docs/improvement-plan.md):
+> a storyboard home, a shot editor with an inspector, scene-level sound, and a cut list. Where it disagrees with this file
+> (for example auto-record on by default, the five steps removed, controllers and rig levels cut), **the improvement plan wins**.
+> Sections 2, 5 and 8 below describe the tool as built before that plan.
+>
+> Motion and interaction polish follows the design-engineering-craft skill in `.claude/skills/design-engineering-craft/`.
+> Shared behaviour lives in `src/ui/motion.ts`: only popovers, folded groups and the side panel animate; the stage, the timeline,
+> frame stepping and keyboard actions never do.
+
 ## 1. What this is
 
 A free, self-owned web app for **rigging layered 2D characters and animating them**: import art, rig it,
