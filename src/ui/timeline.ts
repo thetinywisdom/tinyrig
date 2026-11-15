@@ -75,7 +75,7 @@ export class Timeline {
           h('label', { class: 'opt' }, h('span', {}, 'After this key'),
             h('select', { id: 'ease', disabled: !key, title: 'How the character moves from this key to the next', onchange: (e: Event) => { if (key) { key.ease = (e.target as HTMLSelectElement).value as Ease; ed.evaluateAll(); ed.refresh(); } } },
               ([['ease', 'Ease'], ['linear', 'Even'], ['hold', 'Hold']] as [Ease, string][]).map(([v, text]) => h('option', { value: v, selected: key?.ease === v }, text)))),
-          h('label', { class: 'check', title: 'Store every change as a keyframe automatically' }, h('input', { type: 'checkbox', id: 'auto-key', checked: ed.autoKey, onchange: (e: Event) => { ed.autoKey = (e.target as HTMLInputElement).checked; } }), 'Auto key'),
+          h('label', { class: 'check', title: 'Save every pose on its frame. Turn off to keep only the poses you key with K.' }, h('input', { type: 'checkbox', id: 'auto-key', checked: ed.autoKey, onchange: (e: Event) => { ed.autoKey = (e.target as HTMLInputElement).checked; } }), 'Auto-record poses'),
           h('label', { class: 'check', title: 'Show the previous and next key poses faintly' }, h('input', { type: 'checkbox', id: 'onion', checked: ed.onion, onchange: (e: Event) => { ed.onion = (e.target as HTMLInputElement).checked; ed.redraw(); } }), 'Onion skin'),
           h('div', { class: 'opt' }, h('span', {}, 'Zoom'),
             h('span', {},

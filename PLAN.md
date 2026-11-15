@@ -9,7 +9,13 @@ what is built, how the code is laid out, how to check your work, and what to do 
 > (for example auto-record on by default, the five steps removed, controllers and rig levels cut), **the improvement plan wins**.
 > Sections 2, 5 and 8 below describe the tool as built before that plan.
 >
-> Motion and interaction polish follows the design-engineering-craft skill in `.claude/skills/design-engineering-craft/`.
+> **Phase 0 progress:** done: auto-record on by default ("Pose saved · frame N"), left-drag never pans (Space+drag, middle button,
+> trackpad scroll and pinch instead), Esc closes menus, "Saved ✓" in the top bar, links as plain text. Still to do: jargon renames
+> (needs `design-engineer-review.md`), remove the step wizard and the naming wall from the first run, the 6 console errors, the export preview.
+>
+> Design skills live in `.claude/skills/` (MIT, sources in `.claude/skills/LICENSES/`): Emil Kowalski's animation set, routed by
+> `design-engineering-craft`, and Jakub Krehel's interface set (`better-interface` and the `better-*` skills it draws on;
+> `interface-review` and `explain-interface` run only when asked). Use them for any interface or motion work.
 > Shared behaviour lives in `src/ui/motion.ts`: only popovers, folded groups and the side panel animate; the stage, the timeline,
 > frame stepping and keyboard actions never do.
 

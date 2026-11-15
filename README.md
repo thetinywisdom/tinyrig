@@ -39,19 +39,25 @@ The stage has the window. The work follows five steps along the top; each has on
 
 - **Add layer** on the timeline adds an image behind or in front of the characters, or a text. Each layer has its own row: drag its bar to move it in time, drag an end to trim it, click the row and drag the layer on the stage to place it.
 - **More options** opens the side panel, which starts closed. Advanced settings inside it are folded until opened.
-- **Timeline options** holds timing, easing, Auto key, onion skin and zoom.
+- **Timeline options** holds timing, easing, Auto-record poses, onion skin and zoom.
 - The timeline shows only in Animate and Sound.
 - The rig level is worked out from the pieces in the art; the other output shapes follow the 16:9 framing until you frame them yourself.
 - Everything is undoable, including the pose library, so nothing asks for confirmation.
 
 ### Keyframes
 
-- You set keys yourself: pose the character, then press **K** (or **Set key**). A square key is a hold.
-- A change made on a frame with no key is shown but **not stored**; the timeline says "Not keyed". Leaving the frame drops it (Ctrl+Z brings it back). Tick **Auto key** under Timeline options to store every change.
-- A character with no keys yet simply keeps whatever pose you give it.
+- **Auto-record poses** is on: every pose you make is saved as a key on its frame, and the bottom bar says "Pose saved · frame 48". Pose two frames and press Space to see it move.
+- **K** (or **Set key**) keys the current pose by hand. A square key is a hold.
+- Untick **Auto-record poses** under Timeline options to key only with K. Then a change made on a frame with no key is shown but **not stored**; the timeline says "Not keyed", and leaving the frame drops it (Ctrl+Z brings it back).
 - **1s / 2s / 3s** is the timing for the whole shot: a new drawing every frame, every second frame, or every third. Default 1s, set under Timeline options. Override it per character or per frame range under More in Animate. Swaps always step.
 - **After this key**: Ease, Even or Hold, per key.
 - Space plays, arrow keys step one frame (Shift: 12), Ctrl+Z / Ctrl+Shift+Z undo and redo.
+
+### Moving the view
+
+- Dragging with the left button only poses or moves things. It never moves the view.
+- Move the view: hold **Space** and drag, drag with the middle button, or scroll with two fingers on a trackpad (the mouse wheel scrolls, Shift+wheel sideways).
+- Zoom: pinch on a trackpad, or Ctrl+wheel. **Fit** puts the frame back in the window.
 
 ### Output shapes
 

@@ -61,7 +61,7 @@ const STEPS: [Tab, string][] = [['rig', 'Character'], ['scene', 'Scene'], ['anim
 const HINTS: Record<Tab, string> = {
   rig: 'Drag a pivot to move it. The square is the point the character turns around.',
   scene: 'Drag characters, image layers or the blue frame, whichever is chosen above.',
-  animate: 'Drag any part of the character to pose it. K sets a keyframe, Space plays.',
+  animate: 'Drag any part of the character to pose it. Each pose is saved on its frame. Space plays; hold Space and drag to move the view.',
   sound: 'New sound and text start at the playhead. Drag them on the timeline to move them.',
   capture: 'Load a photo of a pose, or use the webcam, to pose the selected character.',
   export: 'Each output shape uses its own framing from the Scene step.',
@@ -90,7 +90,8 @@ export class Editor {
   /** Pose thumbnails, kept out of undo snapshots because they are large and never change. */
   private thumbs = new Map<string, string>();
   onion = false;
-  autoKey = false;
+  /** Auto-record poses: every change is stored as a key on its frame. On by default (owner's plan, Phase 0). */
+  autoKey = true;
   playing = false;
   /** The pose each character is shown in: the timeline's, or an edit not yet keyed. */
   poses = new Map<string, Pose>();
@@ -225,8 +226,15 @@ export class Editor {
   edited(actor = this.sel()) {
     const pose = this.pose(actor);
     if (!actor || !pose) return;
-    if (actor.role === 'extra' || !actor.keys.length) actor.base = clone(pose); // not animated yet: this is simply its pose
-    else if (this.autoKey || keyAt(actor, this.frame)) { setKey(actor, this.frame, pose); this.unsaved.delete(actor.id); }
+    if (actor.role === 'extra') { actor.base = clone(pose); return; } // extras hold one pose
+    if (this.autoKey) {
+      // Auto-record: the pose is stored on this frame, so posing two frames gives an animation straight away.
+      if (!actor.keys.length) actor.base = clone(pose);
+      setKey(actor, this.frame, pose);
+      this.unsaved.delete(actor.id);
+      this.say(`Pose saved · frame ${this.frame + 1}`);
+    } else if (!actor.keys.length) actor.base = clone(pose); // not animated yet: this is simply its pose
+    else if (keyAt(actor, this.frame)) { setKey(actor, this.frame, pose); this.unsaved.delete(actor.id); }
     else this.unsaved.add(actor.id); // shown, but lost on leaving the frame unless keyed
   }
 
@@ -681,7 +689,8 @@ export class Editor {
       if (this.playing) this.stop();
       if (e.button === 1 || this.spaceDown) { this.drag = { type: 'pan', last: screen }; return; }
       if (e.button !== 0) return;
-      const pan = (): Drag => ({ type: 'pan', last: screen });
+      // A plain left-drag never moves the view: that is Space+drag, the middle button or the trackpad.
+      const pan = (): Drag | null => null;
       const hit = this.stage.hitActor(order(), world);
 
       if (this.tab === 'scene') {
@@ -689,7 +698,7 @@ export class Editor {
           const anchor = cameraCorner(screen), r = cameraRect(this.camera(), this.format());
           const inside = world.x >= r.x && world.x <= r.x + r.w && world.y >= r.y && world.y <= r.y + r.h;
           this.drag = anchor ? { type: 'cameraSize', anchor } : inside ? { type: 'camera', last: world } : pan();
-          if (this.drag.type !== 'pan' && this.formatId !== 'yt') this.camera().custom = true;
+          if (this.drag && this.formatId !== 'yt') this.camera().custom = true;
         } else if (this.sceneTool === 'backgrounds') {
           const id = this.stage.hitBackground(visibleLayers(this.shot, this.frame), world);
           this.selBg = id;
@@ -754,7 +763,7 @@ export class Editor {
       const drag = this.drag;
       const screen = screenPt(e), world = this.stage.screenToWorld(screen);
       if (!drag) {
-        canvas.style.cursor = markerAt(screen, 12) || this.stage.hitActor(order(), world) ? 'grab' : 'default';
+        canvas.style.cursor = this.spaceDown ? 'grab' : markerAt(screen, 12) || this.stage.hitActor(order(), world) ? 'grab' : 'default';
         return;
       }
       const actor = this.sel(), v = this.view(), pose = this.pose(), rig = this.rig();
@@ -850,9 +859,19 @@ export class Editor {
     };
     canvas.addEventListener('pointerup', endDrag);
     canvas.addEventListener('pointercancel', endDrag);
+    // Trackpad: two fingers move the view, pinch zooms (the browser reports a pinch as Ctrl+wheel).
+    // Mouse: the wheel scrolls the view, Ctrl+wheel zooms.
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.stage.zoomAt(screenPt(e), Math.exp(-e.deltaY * 0.0015));
+      if (e.ctrlKey || e.metaKey) {
+        // A pinch sends many small steps; a mouse wheel notch sends one big one (about 100 px or 3 lines).
+        const k = e.deltaMode ? 0.05 : Math.abs(e.deltaY) >= 50 ? 0.0015 : 0.01;
+        this.stage.zoomAt(screenPt(e), Math.exp(-e.deltaY * k));
+      }
+      else {
+        const line = e.deltaMode === 1 ? 16 : 1; // some mice report lines, not pixels
+        this.stage.panBy(-(e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * line, -(e.shiftKey && !e.deltaX ? 0 : e.deltaY) * line);
+      }
       this.redraw();
     }, { passive: false });
 

@@ -113,6 +113,33 @@ await ready(page);
 
 // --- pose: FK, IK, swaps, library, controllers, undo ---------------------------
 if (want('pose')) {
+  // Moving the view: a plain left-drag never pans; Space+drag, two-finger scroll and pinch do.
+  const origin = () => ev(page, () => window.__rig.stage.worldToScreen({ x: 0, y: 0 }));
+  const box0 = await stageBox(page), empty = { x: 40, y: box0.height - 60 };
+  let o0 = await origin();
+  await drag(page, empty, 80, -50);
+  let o1 = await origin();
+  ok('a left-drag on empty stage does not move the view', near(o0.x, o1.x) && near(o0.y, o1.y), JSON.stringify([o0, o1]));
+  await page.mouse.move(box0.x + empty.x, box0.y + empty.y);
+  await page.keyboard.down('Space');
+  await drag(page, empty, 80, -50);
+  await page.keyboard.up('Space');
+  o1 = await origin();
+  ok('Space+drag moves the view', near(o1.x - o0.x, 80, 2) && near(o1.y - o0.y, -50, 2), JSON.stringify([o0, o1]));
+  o0 = o1;
+  await page.mouse.wheel(30, 20);
+  await page.waitForTimeout(100);
+  o1 = await origin();
+  ok('two-finger scroll moves the view', near(o1.x - o0.x, -30, 2) && near(o1.y - o0.y, -20, 2), JSON.stringify([o0, o1]));
+  const zoom0 = await ev(page, () => window.__rig.stage.worldToScreen({ x: 100, y: 0 }).x - window.__rig.stage.worldToScreen({ x: 0, y: 0 }).x);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -8);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(100);
+  const zoom1 = await ev(page, () => window.__rig.stage.worldToScreen({ x: 100, y: 0 }).x - window.__rig.stage.worldToScreen({ x: 0, y: 0 }).x);
+  ok('pinch (Ctrl+wheel) zooms in', zoom1 > zoom0 * 1.03, `${zoom0} → ${zoom1}`);
+  await ev(page, () => { window.__rig.fitView(); window.__rig.redraw(); });
+
   await drag(page, await at(page, 'forearm_L', { x: 382, y: 440 }), 60, -40);
   ok('FK drag turns the elbow', Math.abs((await angles(page)).elbow_L) > 20, JSON.stringify(await angles(page)));
   const hand = await at(page, 'hand_R', { x: 214, y: 498 });
@@ -174,7 +201,22 @@ if (want('pose')) {
 if (want('animate')) {
   await tab(page, 'animate');
   await page.click('#reset-pose');
+  // Auto-record is on by default: posing two frames makes an animation with no K at all.
+  ok('auto-record is on by default', await page.locator('#auto-key').isChecked());
+  await ev(page, () => { const ed = window.__rig; ed.sel().keys = []; ed.setFrame(0); ed.refresh(); });
+  await setAngles(page, { shoulder_L: -90 });
+  await ev(page, () => window.__rig.setFrame(47));
+  await setAngles(page, { shoulder_L: 0 });
+  ok('auto-record keeps a pose on each frame it was made', await ev(page, () => window.__rig.sel().keys.map((k) => k.frame).join()) === '0,47');
+  ok('auto-record says where the pose went', /Pose saved · frame 48/.test(await page.textContent('.hint')), await page.textContent('.hint'));
+  await ev(page, () => window.__rig.setFrame(0));
+  ok('and the first pose is still there', near((await angles(page)).shoulder_L, -90));
+  // The rest of this section checks manual keying, with auto-record turned off.
+  await page.uncheck('#auto-key');
+  await ev(page, () => { const ed = window.__rig; ed.sel().keys = []; ed.setFrame(0); ed.refresh(); });
+  await page.click('#reset-pose');
   await page.keyboard.press('k');
+  ok('K says the key is set', /Key set · frame 1/.test(await page.textContent('.hint')));
   await ev(page, () => window.__rig.setFrame(24));
   await setAngles(page, { shoulder_L: -120, elbow_L: -40 });
   ok('an edit off a key is flagged as not keyed', await page.locator('#unsaved').count() === 1);
