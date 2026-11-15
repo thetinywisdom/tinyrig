@@ -1,5 +1,5 @@
 // End-to-end check in a real browser. Needs `npm run dev` running.
-//   node scripts/check.mjs [outDir] [section...]     sections: import pose animate scene sound layers capture export save
+//   node scripts/check.mjs [outDir] [section...]     sections: storyboard import pose animate scene sound layers capture export save
 import { createRequire } from 'node:module';
 import { mkdirSync, writeFileSync } from 'node:fs';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -23,6 +23,11 @@ async function open(placeholder = 'High') {
   page.on('pageerror', (e) => errors.push(String(e.stack || e)));
   page.on('console', (m) => m.type() === 'error' && !/^INFO:/.test(m.text()) && errors.push(m.text()));
   await page.goto(APP);
+  // Start screen → new scene → clear the sample → import a character into a new panel.
+  await page.click('#new-scene');
+  await page.waitForSelector('.sb-panel', { timeout: 30000 });
+  await page.click('#clear-sample');
+  await page.click('#sb-import');
   await page.click(`[data-placeholder="${placeholder}"]`);
   await page.waitForSelector('#open-editor, .status.error', { timeout: 90000 });
   return { context, page };
@@ -71,6 +76,98 @@ function wav(seconds, bursts) {
     data.writeInt16LE(Math.round(v * 30000), 44 + i * 2);
   }
   return data;
+}
+
+// --- storyboard: start screen, sample, panels, undo, reorder, sketches, shot round trip ---
+if (want('storyboard')) {
+  const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true });
+  const page = await context.newPage();
+  page.on('pageerror', (e) => errors.push(String(e.stack || e)));
+  page.on('console', (m) => m.type() === 'error' && !/^INFO:/.test(m.text()) && errors.push(m.text()));
+  await page.goto(APP);
+  ok('a first visit shows New scene and Open scene', await page.locator('#new-scene').isVisible() && await page.locator('#open-scene').isVisible());
+  ok('no naming rules on the first screen', await page.locator('#naming').count() === 0);
+  await page.click('#new-scene');
+  await page.waitForSelector('.sb-panel');
+  const ids = () => page.$$eval('.sb-panel', (n) => n.map((e) => e.dataset.id));
+  const sb = (fn, arg) => page.evaluate(fn, arg);
+  ok('a new scene has 3 sample panels', (await ids()).length === 3);
+  ok('the header shows runtime and shot count', (await page.textContent('#sb-summary')) === '0:08 · 3 shots', await page.textContent('#sb-summary'));
+  await page.waitForFunction(() => document.querySelector('.sb-panel img')?.src.startsWith('data:image/jpeg'), null, { timeout: 15000 });
+  ok('the finished sample panel shows a frame of its shot', true);
+  ok('the sample shot moves', await sb(() => { const s = window.__sb.ctx.project.shots[0]; return s.actors[0].keys.length >= 3; }));
+  ok('sketch panels show their sketch', await page.locator('.sb-panel >> nth=1 >> img[alt^="Sketch"]').count() === 1);
+  await page.screenshot({ path: `${out}/storyboard.png` });
+
+  // Duration typed in; notes edited in place.
+  await page.click('.sb-panel >> nth=1 >> .sb-dur');
+  await page.fill('.sb-dur-input', '3.2');
+  await page.keyboard.press('Enter');
+  ok('a typed duration shows next to the panel number', (await page.textContent('.sb-panel >> nth=1 >> .sb-head')).includes('3.2s'));
+  ok('runtime follows', (await page.textContent('#sb-summary')).startsWith('0:07'));
+  await page.click('.sb-panel >> nth=2 >> .sb-notes');
+  await page.fill('.sb-notes-edit', 'Close-up: phone.\nSound: buzz, twice.\nB looks over.\nA grabs it.');
+  await page.click('#scene-name');
+  ok('notes are saved and clamped to a few lines', await sb(() => window.__sb.sb.panels.some((p) => p.notes.endsWith('A grabs it.'))));
+
+  // Add, duplicate, delete with Undo, reorder by dragging.
+  await page.click('#sb-add');
+  ok('Add panel adds one at the end and selects it', (await ids()).length === 4 && await page.locator('.sb-panel.selected').count() === 1);
+  await page.hover('.sb-panel >> nth=1');
+  await page.click('.sb-panel >> nth=1 >> .sb-gap');
+  ok('+ in a gap adds a panel there', (await ids()).length === 5 && await sb(() => !window.__sb.sb.panels[1].notes));
+  await page.click('.sb-panel >> nth=0 >> .sb-head');
+  await page.keyboard.press('Control+d');
+  ok('Ctrl+D duplicates the selected panel next to it', (await ids()).length === 6 && await sb(() => window.__sb.sb.panels[1].notes === window.__sb.sb.panels[0].notes && !window.__sb.sb.panels[1].shot));
+  const before = await ids();
+  await page.keyboard.press('Delete');
+  ok('Delete removes the panel with an Undo message', (await ids()).length === 5 && /deleted/.test(await page.textContent('.toast')));
+  await page.click('#toast-undo');
+  ok('Undo brings it back', (await ids()).join() === before.join());
+  const box = async (i) => page.locator(`.sb-panel >> nth=${i}`).boundingBox();
+  const a = await box(0), c = await box(2);
+  await page.mouse.move(a.x + a.width / 2, a.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(a.x + a.width / 2 + 40, a.y + 40, { steps: 4 });
+  await page.mouse.move(c.x + c.width * 0.8, c.y + c.height / 2, { steps: 8 });
+  ok('dragging marks where the panel will land', await page.locator('.drop-after, .drop-before').count() === 1);
+  await page.mouse.up();
+  const after = await ids();
+  ok('dropping reorders the panels', after[2] === before[0] && after.length === before.length, JSON.stringify({ before, after }));
+  await page.keyboard.press('Control+z');
+  ok('undo puts the order back', (await ids()).join() === before.join());
+
+  // Sketch files: one per new panel, in filename order.
+  const png = (color) => sb((col) => new Promise((res) => {
+    const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180; const g = cv.getContext('2d'); g.fillStyle = col; g.fillRect(0, 0, 320, 180);
+    cv.toBlob(async (bl) => res([...new Uint8Array(await bl.arrayBuffer())]));
+  }), color);
+  for (const [n, col] of [['shot10.png', '#f88'], ['shot2.png', '#8f8'], ['shot1.png', '#88f']]) writeFileSync(`${out}/${n}`, Buffer.from(await png(col)));
+  const count = (await ids()).length;
+  await page.evaluate(() => { window.__sb.selected = null; window.__sb.render(); });
+  const dt = await page.evaluateHandle(async (files) => {
+    const d = new DataTransfer();
+    for (const [name, bytes] of files) d.items.add(new File([new Uint8Array(bytes)], name, { type: 'image/png' }));
+    return d;
+  }, await Promise.all(['shot10.png', 'shot2.png', 'shot1.png'].map(async (n) => [n, [...(await import('node:fs')).readFileSync(`${out}/${n}`)]])));
+  await page.dispatchEvent('.sb-grid', 'drop', { dataTransfer: dt });
+  await page.waitForTimeout(300);
+  ok('dropped sketches become panels in filename order', await sb(() => window.__sb.sb.panels.slice(-3).map((p) => p.sketch).join()) === 'shot1.png,shot2.png,shot10.png' && (await ids()).length === count + 3);
+
+  // Open a sketch panel's shot, then come back: the panel now shows the shot.
+  const desk = await sb(() => window.__sb.sb.panels.findIndex((p) => p.sketch === 'sample_desk.png'));
+  await page.dblclick(`.sb-panel >> nth=${desk} >> .sb-head`);
+  await page.waitForFunction(() => window.__rig?.timeline, null, { timeout: 20000 });
+  ok('double-click opens the panel as a shot of the same length', await page.evaluate(() => window.__rig.shot.length) === Math.round(3.2 * 24));
+  await page.click('#to-storyboard');
+  await page.waitForSelector('.sb-panel');
+  ok('back on the storyboard, the panel keeps its shot', await sb((i) => !!window.__sb.sb.panels[i].shot, desk));
+  await page.reload();
+  await page.waitForSelector('.sb-panel');
+  ok('reload reopens the storyboard with everything in it', (await ids()).length === count + 3 && await sb(() => window.__sb.sb.panels.some((p) => p.notes.endsWith('A grabs it.'))));
+  await page.click('#clear-sample');
+  ok('Clear sample removes only the sample panels', (await ids()).length === count + 3 - 3 && await sb(() => window.__sb.sb.panels.every((p) => !p.sample)));
+  await context.close();
 }
 
 // --- import: every placeholder --------------------------------------------------

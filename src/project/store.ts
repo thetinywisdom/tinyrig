@@ -3,9 +3,9 @@
 import { unzipSync, zipSync } from 'fflate';
 import type { FileMap } from './project';
 
-const TOP_DIRS = ['characters', 'poses', 'controls', 'scenes', 'shots', 'backgrounds', 'audio', 'fonts'];
-const ROOT_FILE = 'project.json';
-const IN_PROJECT = new RegExp(`(^|/)((${TOP_DIRS.join('|')})/|${ROOT_FILE}$)`);
+const TOP_DIRS = ['characters', 'poses', 'controls', 'scenes', 'shots', 'backgrounds', 'sketches', 'audio', 'fonts'];
+const ROOT_FILES = ['project.json', 'storyboard.json'];
+const IN_PROJECT = new RegExp(`(^|/)((${TOP_DIRS.join('|')})/|(${ROOT_FILES.map((f) => f.replace('.', '\\.')).join('|')})$)`);
 
 // --- browser storage (IndexedDB) ---------------------------------------------
 function openDb(): Promise<IDBDatabase> {
@@ -62,7 +62,7 @@ async function projectFilesIn(root: FileSystemDirectoryHandle): Promise<Map<stri
   for (const top of TOP_DIRS) {
     try { await listFolder(await root.getDirectoryHandle(top) as Dir, `${top}/`, out); } catch { /* not there yet */ }
   }
-  try { out.set(ROOT_FILE, await root.getFileHandle(ROOT_FILE)); } catch { /* none */ }
+  for (const f of ROOT_FILES) { try { out.set(f, await root.getFileHandle(f)); } catch { /* none */ } }
   return out;
 }
 export async function readFolder(root: FileSystemDirectoryHandle): Promise<FileMap> {

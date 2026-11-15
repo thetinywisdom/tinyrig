@@ -99,6 +99,9 @@ export function mountImporter(
   let current: Imported | null = null;
 
   const status = h('p', { class: 'status', role: 'status' });
+  // The naming guide shows only when an import has a problem it would help with.
+  const naming = h('div', { class: 'naming-slot' });
+  const showNaming = (show: boolean) => naming.replaceChildren(...(show ? [namingConvention()] : []));
   const review = h('div', { class: 'review' });
   const toFiles = (list: FileList | null | undefined) =>
     Promise.all([...(list ?? [])].map(async (f) => ({ name: f.name, data: await f.arrayBuffer() })));
@@ -119,6 +122,7 @@ export function mountImporter(
     files = next;
     mode = nextMode;
     review.replaceChildren();
+    showNaming(false);
     status.className = 'status';
     status.textContent = 'Reading…';
     try {
@@ -129,6 +133,7 @@ export function mountImporter(
       current = null;
       status.className = 'status error';
       status.textContent = err instanceof Error ? err.message : String(err);
+      showNaming(true);
     }
   }
 
@@ -137,6 +142,8 @@ export function mountImporter(
     const views = Object.entries(imp.views).map(([v, p]) => `${v} (${p!.length} pieces)`).join(', ');
     const fileText = imp.fileNames.length > 3 ? `${imp.fileNames.length} files` : imp.fileNames.join(', ');
     const level = LEVEL_CARDS[rig.level];
+    const found = [...levelIssues(rig, rig.level), ...issues];
+    showNaming(found.some((i) => i.severity === 'error' || i.severity === 'warn'));
 
     review.replaceChildren(...[
       h('h2', {}, imp.name),
@@ -196,5 +203,5 @@ export function mountImporter(
 
   host.replaceChildren(h('main', { class: 'importer' },
     onCancel ? h('button', { class: 'link', id: 'back', onclick: onCancel }, '← Back to the editor') : null,
-    h('h1', {}, 'Import a character'), drop, wholeInput, partsInput, status, review, namingConvention()));
+    h('h1', {}, 'Import a character'), drop, wholeInput, partsInput, status, review, naming));
 }

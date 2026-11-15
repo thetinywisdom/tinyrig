@@ -6,9 +6,11 @@
 //   scenes/<name>.json                          scene templates
 //   shots/<name>.json                           a scene plus its timeline, sound and text
 //   backgrounds/ audio/ fonts/                  the files shots use
+//   storyboard.json  sketches/                  the scene's panels and their sketches
 // The same file map is written to a real folder, a zip, or the browser's own storage.
 import type { Pad } from '../model/pads';
 import type { SceneTemplate, Shot } from '../model/shot';
+import type { Storyboard } from '../model/storyboard';
 import type { Rig, SavedPose } from '../model/types';
 import { readFiles, type Imported, type ImportMode } from '../ui/importer';
 
@@ -20,14 +22,16 @@ export interface Project {
   pads: Pad[];
   shots: Shot[];
   scenes: SceneTemplate[];
-  /** Background images, sound and font files, by project path (backgrounds/x.png, audio/x.wav, fonts/x.ttf). */
+  /** The scene's panels. Null in a project made before the storyboard existed (one is made on opening). */
+  storyboard: Storyboard | null;
+  /** Background images, sketches, sound and font files, by project path (backgrounds/x.png, sketches/x.png, audio/x.wav, fonts/x.ttf). */
   assets: Map<string, Uint8Array>;
   /** Google Fonts families to load, by name. The only thing in the app that goes online, and only if used. */
   googleFonts: string[];
 }
 export type FileMap = Map<string, Uint8Array>;
 
-export const emptyProject = (): Project => ({ characters: [], poses: [], pads: [], shots: [], scenes: [], assets: new Map(), googleFonts: [] });
+export const emptyProject = (): Project => ({ characters: [], poses: [], pads: [], shots: [], scenes: [], storyboard: null, assets: new Map(), googleFonts: [] });
 export const slug = (name: string) => name.trim().replace(/[^\w\- ]+/g, '_').replace(/\s+/g, '_') || 'untitled';
 const enc = new TextEncoder(), dec = new TextDecoder();
 const json = (value: unknown) => enc.encode(JSON.stringify(value, null, 2));
@@ -59,6 +63,7 @@ export function projectToFiles(project: Project): FileMap {
   for (const scene of project.scenes) files.set(`scenes/${slug(scene.name)}.json`, json(scene));
   for (const [path, bytes] of project.assets) files.set(path, bytes);
   if (project.googleFonts.length) files.set('project.json', json({ googleFonts: project.googleFonts }));
+  if (project.storyboard) files.set('storyboard.json', json(project.storyboard));
   return files;
 }
 
@@ -101,7 +106,9 @@ export async function filesToProject(files: FileMap, onProgress?: (text: string)
     const scene = parse<SceneTemplate>(path);
     if (scene?.stage) project.scenes.push(scene);
   }
-  for (const [path, bytes] of files) if (/^(backgrounds|audio|fonts)\//.test(path)) project.assets.set(path, bytes);
+  for (const [path, bytes] of files) if (/^(backgrounds|sketches|audio|fonts)\//.test(path)) project.assets.set(path, bytes);
+  const sb = parse<Storyboard>('storyboard.json');
+  if (sb && Array.isArray(sb.panels)) project.storyboard = sb;
   project.googleFonts = parse<{ googleFonts?: string[] }>('project.json')?.googleFonts ?? [];
   return project;
 }

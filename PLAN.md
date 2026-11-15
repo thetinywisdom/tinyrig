@@ -11,7 +11,14 @@ what is built, how the code is laid out, how to check your work, and what to do 
 >
 > **Phase 0 progress:** done: auto-record on by default ("Pose saved · frame N"), left-drag never pans (Space+drag, middle button,
 > trackpad scroll and pinch instead), Esc closes menus, "Saved ✓" in the top bar, links as plain text. Still to do: jargon renames
-> (needs `design-engineer-review.md`), remove the step wizard and the naming wall from the first run, the 6 console errors, the export preview.
+> (needs `design-engineer-review.md`), remove the step wizard (Phase 2's inspector replaces it), the 6 console errors, the export preview.
+> The naming wall is gone from the first run: the importer shows the naming guide only when an import has a problem.
+>
+> **Phase 1 (storyboard home): built.** `src/model/storyboard.ts` (pure, tested), `src/ui/storyboard.ts` (the grid), `src/ui/start.ts`,
+> `src/ui/sample.ts` (sample scene: placeholder character waving, two generated sketches), `src/render/thumb.ts` (panel frames from a
+> hidden shared stage). Files: `storyboard.json` and `sketches/`. Every shot belongs to a panel (`linkShots`). Storyboard undo is its own
+> stack of snapshots (storyboard, shots, characters, sketches). The browser check's setup now goes start screen → new scene → clear sample
+> → import, and a `storyboard` section covers the grid. Not done yet: the "Done when" test with the owner's real storyboard.
 >
 > Design skills live in `.claude/skills/` (MIT, sources in `.claude/skills/LICENSES/`): Emil Kowalski's animation set, routed by
 > `design-engineering-craft`, and Jakub Krehel's interface set (`better-interface` and the `better-*` skills it draws on;

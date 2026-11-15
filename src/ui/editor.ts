@@ -3,6 +3,7 @@
 // and the timeline live in their own files and talk to this class.
 import { AudioEngine } from '../audio/audio';
 import { EASE_DRAWER, enter } from './motion';
+import { placeActor } from '../model/actor';
 import {
   apply, boneMatrices, canBend, clampToLimit, defaultVariant, invert, normDeg, restPose, rootMatrix, solveLimbIK, swapOptions, swingAround,
 } from '../model/pose';
@@ -48,6 +49,8 @@ export interface EditorContext {
   addCharacter?: string;
   onChanged: () => void;
   onShot: (name: string) => void;
+  /** Back to the storyboard. */
+  back?: () => void;
   importCharacter: () => void;
   download: (name: string, bytes: Uint8Array, type: string) => void;
   menu: () => { label: string; run: () => void }[];
@@ -292,21 +295,8 @@ export class Editor {
   /** Put a character on the stage, sized to sit comfortably in a 1080-tall frame. */
   addActor(character: string, refresh = true): Actor | null {
     const entry = this.project.characters.find((c) => c.name === character);
-    const viewId = entry && VIEWS.find((v) => entry.data.rig.views[v]);
-    if (!entry || !viewId) return null;
-    const view = entry.data.rig.views[viewId]!;
-    const boxes = Object.values(view.pieces).filter((p) => !p.shared).map((p) => p.bbox);
-    const top = Math.min(...boxes.map((b) => b.y)), bottom = Math.max(...boxes.map((b) => b.y + b.h));
-    const left = Math.min(...boxes.map((b) => b.x)), right = Math.max(...boxes.map((b) => b.x + b.w));
-    const height = bottom - top, scale = height > 1000 || height < 500 ? Math.round((800 / height) * 100) / 100 : 1;
-    const n = this.shot.actors.length, slot = [0, -1, 1][n % 3] * 420 + Math.floor(n / 3) * 120;
-    const role = this.shot.actors.filter((a) => a.role === 'actor').length < MAX_ACTORS ? 'actor' : 'extra';
-    const centre = { x: this.shot.stage.w / 2 + slot, y: this.shot.stage.h / 2 };
-    const base: Pose = {
-      ...restPose(view, viewId), scale,
-      root: { x: centre.x + (view.rootPivot.x - (left + right) / 2) * scale, y: centre.y + (view.rootPivot.y - (top + bottom) / 2) * scale },
-    };
-    const actor: Actor = { id: uid(), character, role, base, keys: [], mouth: [] };
+    const actor = entry && placeActor(this.shot, character, entry.data.rig);
+    if (!entry || !actor) return null;
     this.shot.actors.push(actor);
     if (!this.stage.hasCharacter(character)) this.stage.setCharacter(character, entry.data.imp);
     this.selId = actor.id;
@@ -621,6 +611,7 @@ export class Editor {
   renderToolbar() {
     const { project, ctx } = this;
     this.toolbar.replaceChildren(
+      ...(ctx.back ? [h('button', { id: 'to-storyboard', title: 'Back to the storyboard', onclick: ctx.back }, '← Storyboard')] : []),
       h('select', { class: 'name', id: 'shot', 'aria-label': 'Shot', onchange: (e: Event) => {
         const v = (e.target as HTMLSelectElement).value;
         if (v === '+') { const s = newShot(`Shot ${project.shots.length + 1}`); project.shots.push(s); ctx.onChanged(); ctx.onShot(s.name); } else ctx.onShot(v);

@@ -25,6 +25,19 @@ With `npm run dev` running in another terminal, the browser check drives the who
 node scripts/check.mjs check-output
 ```
 
+## The storyboard
+
+A project is one scene, and a scene starts as a storyboard: a grid of panels read like a comic page.
+The first screen offers **New scene** (with a three-panel sample you can remove with **Clear sample**) and **Open scene**.
+
+- Each panel has a **sketch**, free-text **notes** (dialogue, action, camera, sound) and a **duration**, shown as `#4 · 3.2s`. Click the duration or the notes to edit them.
+- Once a panel is animated it shows a frame of its shot. **Show sketches** brings the sketches back.
+- **Add panel** at the end, or **+** in the gap between two panels. Drag a panel to move it.
+- Drop many sketch files on the grid to get one panel per file, in filename order. Drop one file on a panel, or paste an image (Ctrl+V), to set its sketch.
+- Select a panel, then: **Ctrl+D** duplicates, **Delete** removes (with Undo), **Enter** or a double-click opens its shot, arrow keys move between panels.
+- The header shows the scene name and total runtime, for example `1:48 · 27 shots`.
+- **← Storyboard** in the editor goes back. A reload reopens the screen you were on.
+
 ## The editor
 
 The stage has the window. The work follows five steps along the top; each has one main action, placed on the stage.
@@ -102,6 +115,8 @@ and exports or opens a zip. All of it is plain files:
 | `controls/<name>_<id>.json` | A controller pad and the poses in its slots |
 | `scenes/<name>.json` | A scene template |
 | `shots/<name>.json` | A scene plus its keyframes, mouth keys, layers, sound clips and text |
+| `storyboard.json` | The scene's panels: notes, durations, which sketch and which shot |
+| `sketches/` | The panels' sketch images |
 | `backgrounds/`, `audio/`, `fonts/` | The files shots use |
 
 ## Code layout
