@@ -20,6 +20,23 @@ what is built, how the code is laid out, how to check your work, and what to do 
 > stack of snapshots (storyboard, shots, characters, sketches). The browser check's setup now goes start screen → new scene → clear sample
 > → import, and a `storyboard` section covers the grid. Not done yet: the "Done when" test with the owner's real storyboard.
 >
+> **Phase 2 (shot editor): built.** The five steps and the side panel are gone. `src/ui/editor.ts` (state, drawing, stage input),
+> `src/ui/inspector.ts` (layer list + whatever is selected), `src/ui/filmstrip.ts`. The editor has a `focus` (what the inspector shows:
+> shot, actor, layer, text, camera, clip, export) and a `mode` (pose, rig, place, capture); `select()` and `setMode()` change them.
+> One layer stack per shot: `shot.order` with `stackOrder()` / `moveInStack()` in `model/shot.ts`; the renderer draws `order` in one
+> container. `hidden` and `locked` on images and actors; locked things are skipped by `Editor.pick()`, hidden ones are not drawn or exported.
+> Backgrounds start locked. Extras can `loop` through inline poses (evaluated in `evaluate()`, no keys). `[`/`]`, `,`/`.`, `?`, Ctrl+↑.
+> Cut per the plan's Cut list: controllers (UI gone, `controls/` files still load), exact angle fields, per-pose draw order, the rig-level
+> picker (the level is still worked out from the art), part-by-part import (old projects still open), 4:3 and 3:4 shapes (old framings kept).
+>
+> **Phase 3 (sound and mouths): built.** Sound is on the storyboard: `storyboard.sound` of `SceneClip` (lane voice/sfx/music, pinned to a
+> panel id + offset in frames, so panel edits never desync it). `shotClips()` gives one shot's view (negative starts for a line that began
+> earlier); `sceneClips()` the whole scene. Old per-shot `shot.audio` moves onto the scene on open (`moveShotSoundToScene`). Timeline zooms:
+> this shot / whole scene (`\`). Starter effects are generated in code (`src/audio/effects.ts`, no licence question). Scratch takes:
+> `src/audio/record.ts` + `storeTake()` in `src/ui/sound.ts`; a take sets the panel's length. `src/ui/player.ts` plays the whole scene with
+> one continuous sound clock. Mouths stay manual; the loudness flaps are a folded "quick" option on a voice sound.
+> Not done: the "Done when" tests with the owner's real character and storyboard; the 6 console errors and the jargon renames (waiting on the owner).
+>
 > Design skills live in `.claude/skills/` (MIT, sources in `.claude/skills/LICENSES/`): Emil Kowalski's animation set, routed by
 > `design-engineering-craft`, and Jakub Krehel's interface set (`better-interface` and the `better-*` skills it draws on;
 > `interface-review` and `explain-interface` run only when asked). Use them for any interface or motion work.

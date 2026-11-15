@@ -3,13 +3,15 @@
 // Everything here is undoable, so nothing asks for confirmation.
 import { FPS, uid } from '../model/shot';
 import {
-  byFileName, movePanel, newPanel, panelSeconds, setPanelSeconds, summary, type Panel, type Storyboard,
+  byFileName, dropOrphanClips, movePanel, newPanel, panelSeconds, setPanelSeconds, summary, type Panel, type Storyboard,
 } from '../model/storyboard';
 import type { CharacterEntry, Project } from '../project/project';
-import { ShotPictures } from '../render/thumb';
+import { pictures } from '../render/thumb';
 import { h } from './dom';
 import { EASE_OUT, enter } from './motion';
 import { clearSample } from './sample';
+import { recordingState, storeTake, toggleTake } from './sound';
+import { soundSeconds } from '../audio/record';
 
 export interface StoryboardContext {
   project: Project;
@@ -34,8 +36,6 @@ export class StoryboardView {
   private editing: { id: string; field: 'notes' | 'duration' } | null = null;
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
-  private pictures = new ShotPictures();
-  private frameCache = new Map<string, { key: string; url: string }>();
   private sketchUrls = new Map<string, { bytes: Uint8Array; url: string }>();
   private root = h('div', { class: 'storyboard' });
   private grid = h('div', { class: 'sb-grid', role: 'list', 'aria-label': 'Panels' });
@@ -192,6 +192,7 @@ export class StoryboardView {
     const p = this.sb.panels[i];
     this.change(() => {
       this.sb.panels.splice(i, 1);
+      dropOrphanClips(this.sb); // its sound goes too
       // Its shot goes with it (undo brings both back).
       if (p.shot && !this.sb.panels.some((q) => q.shot === p.shot)) this.ctx.project.shots = this.ctx.project.shots.filter((s) => s.name !== p.shot);
       this.selected = this.sb.panels[Math.min(i, this.sb.panels.length - 1)]?.id ?? null;
@@ -231,19 +232,37 @@ export class StoryboardView {
 
   /** Show which panel is selected without redrawing, so a double-click still lands on the same panel. */
   private markSelection() {
-    this.grid.querySelector('.sb-open')?.remove();
+    this.grid.querySelectorAll('.sb-actions').forEach((n) => n.remove());
     for (const el of this.grid.querySelectorAll<HTMLElement>('.sb-panel')) {
       const on = el.dataset.id === this.selected;
       el.classList.toggle('selected', on);
       el.setAttribute('aria-selected', String(on));
       const p = on ? this.panel(el.dataset.id!) : null;
       if (p) {
-        el.querySelector('.sb-pic')!.append(h('button', { class: 'sb-open', id: 'sb-open', onclick: (e: Event) => { e.stopPropagation(); this.ctx.openPanel(p); } },
-          this.animated(p) ? 'Open shot' : 'Animate'));
+        const rec = recordingState(), here = rec.active && rec.panel === p.id;
+        el.querySelector('.sb-pic')!.append(h('div', { class: 'sb-actions' },
+          h('button', { class: 'sb-record' + (here ? ' recording' : ''), id: 'sb-record', disabled: rec.active && !here,
+            title: 'Record a scratch take of this panel\'s line. The panel becomes as long as the take.',
+            onclick: (e: Event) => { e.stopPropagation(); void this.recordTake(p); } }, here ? `Stop ${rec.seconds.toFixed(1)}s` : 'Record line'),
+          h('button', { class: 'sb-open', id: 'sb-open', onclick: (e: Event) => { e.stopPropagation(); this.ctx.openPanel(p); } },
+            this.animated(p) ? 'Open shot' : 'Animate')));
       }
     }
   }
   private select(id: string | null) { this.selected = id; this.markSelection(); }
+
+  /** Record a scratch take on a panel, or stop and keep it. The panel becomes as long as the take. */
+  private async recordTake(p: Panel) {
+    await toggleTake(p.id,
+      (s) => { const b = this.grid.querySelector('#sb-record'); if (b) b.textContent = `Stop ${s.toFixed(1)}s`; },
+      async (take) => {
+        const seconds = (await soundSeconds(take.bytes)) ?? take.seconds;
+        this.change(() => { storeTake(this.ctx.project, p, take, seconds); });
+        this.toast(`Take kept on panel ${this.index(p.id) + 1}: ${seconds.toFixed(1)} s.`, true);
+      },
+      (message) => this.toast(message, false));
+    this.markSelection();
+  }
 
   private renderTop() {
     const { project } = this.ctx;
@@ -299,6 +318,7 @@ export class StoryboardView {
         })
       : h('button', { class: 'sb-dur', title: 'Change the length', onclick: (e: Event) => { e.stopPropagation(); this.selected = p.id; this.editing = { id: p.id, field: 'duration' }; this.render(); } }, `${secs}s`);
     const head = h('div', { class: 'sb-head' }, h('span', { class: 'sb-num' }, `#${i + 1}`), h('span', { class: 'sb-dot', 'aria-hidden': 'true' }, '·'), dur,
+      this.ctx.project.storyboard?.sound?.some((c) => c.take && c.panel === p.id) ? h('span', { class: 'sb-take', title: 'Has a scratch take' }, 'Take') : null,
       this.animated(p) ? h('span', { class: 'sb-badge' }, `${Math.round(secs * FPS)} frames`) : null);
 
     // Picture: a frame of the shot once animated (unless sketches are asked for), else the sketch.
@@ -306,15 +326,9 @@ export class StoryboardView {
     const showFrame = this.animated(p) && !(this.sb.showSketches && p.sketch);
     if (showFrame) {
       const img = h('img', { alt: `Frame from panel ${i + 1}`, draggable: false });
-      const shot = this.shotOf(p)!, key = JSON.stringify(shot);
-      const cached = this.frameCache.get(p.id);
-      if (cached) img.src = cached.url;
-      if (cached?.key !== key) {
-        void this.pictures.picture(project, shot, Math.floor(shot.length / 2), 480).then((url) => {
-          this.frameCache.set(p.id, { key, url });
-          img.src = url;
-        }).catch(() => undefined);
-      }
+      const shot = this.shotOf(p)!, cached = pictures.cached(shot);
+      if (cached) img.src = cached;
+      else void pictures.picture(project, shot).then((url) => { img.src = url; }).catch(() => undefined);
       pic.append(img);
     } else if (p.sketch && this.sketchUrl(p.sketch)) {
       pic.append(h('img', { src: this.sketchUrl(p.sketch)!, alt: `Sketch for panel ${i + 1}`, draggable: false }));
@@ -504,7 +518,6 @@ export class StoryboardView {
 
   dispose() {
     for (const d of this.disposers) d();
-    this.pictures.dispose();
     for (const { url } of this.sketchUrls.values()) URL.revokeObjectURL(url);
     clearTimeout(this.toastTimer);
   }

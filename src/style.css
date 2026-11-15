@@ -317,3 +317,84 @@ details.naming > summary { cursor: pointer; font-weight: 600; padding: 12px 0; c
 /* A short message with Undo, bottom centre. */
 .toast { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-radius: 10px; background: var(--ink); color: #fff; box-shadow: 0 10px 30px rgba(31, 36, 48, 0.3); max-width: calc(100% - 32px); }
 .toast .link { color: #fff; font-weight: 600; }
+
+/* --- Shot editor (Phase 2): filmstrip on top, inspector on the right ------------------------ */
+.toolbar { flex-wrap: nowrap; }
+.filmstrip { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; padding: 2px 4px; scrollbar-width: thin; }
+.film { position: relative; flex: none; width: 76px; height: 44px; padding: 0; border-radius: 4px; overflow: hidden; border: 1.5px solid var(--line); background: #fbfaf7; }
+.film img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.film.blank { background: repeating-linear-gradient(-45deg, var(--bg) 0 6px, var(--surface) 6px 12px); }
+.film.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.film-n { position: absolute; left: 3px; top: 2px; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 4px; border-radius: 3px; background: var(--ink); color: #fff; font-variant-numeric: tabular-nums; }
+.film.current .film-n { background: var(--accent); }
+@media (hover: hover) and (pointer: fine) { .film:hover:not(.current) { border-color: var(--muted); } }
+.toolbar button.selected { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+.panel.inspector { width: 280px; flex: none; }
+.inspector section h3:empty { display: none; }
+.layers-section { padding-bottom: 10px; }
+.layers { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.layer { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; cursor: pointer; user-select: none; position: relative; min-height: 30px; }
+@media (hover: hover) and (pointer: fine) { .layer:hover { background: var(--bg); } }
+.layer.selected { background: var(--accent-soft); border-color: var(--accent); }
+.layer.is-hidden .layer-name { color: var(--muted); text-decoration: line-through; }
+.layer.stack { touch-action: none; }
+.layer.lifted { z-index: 3; background: var(--surface); box-shadow: 0 8px 20px rgba(31, 36, 48, 0.2); cursor: grabbing; }
+.layer.drop-above::before, .layer.drop-below::after { content: ''; position: absolute; left: 4px; right: 4px; height: 2px; background: var(--accent); border-radius: 1px; }
+.layer.drop-above::before { top: -2px; }
+.layer.drop-below::after { bottom: -2px; }
+.grip { color: var(--muted); cursor: grab; font-size: 11px; letter-spacing: -2px; width: 10px; }
+.layer.fixed .layer-name { padding-left: 16px; }
+.layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13px; }
+.layer-kind { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 64px; }
+.layer-toggle { flex: none; padding: 1px 5px; font-size: 11px; border-radius: 4px; color: var(--muted); }
+.layer-toggle.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.inspector .notes { white-space: pre-line; margin: 0 0 6px; padding: 8px 10px; background: var(--bg); border-radius: 6px; font-size: 13px; line-height: 1.45; }
+
+.add-menu > summary.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; box-shadow: 0 1px 3px rgba(31, 36, 48, 0.18); }
+.add-menu .menu-items { left: 0; right: auto; transform-origin: top left; min-width: 230px; }
+.menu-head { margin: 4px 8px 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.menu-items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+
+/* Keyboard shortcuts */
+.keys-help { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(31, 36, 48, 0.35); }
+.keys-card { background: var(--surface); border-radius: 12px; padding: 18px 22px; width: min(520px, calc(100% - 32px)); box-shadow: 0 20px 50px rgba(31, 36, 48, 0.3); }
+.keys-card h2 { margin: 0; }
+.keys-card dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 14px 0 0; }
+.keys-card dt { white-space: nowrap; }
+.keys-card dd { margin: 0; color: var(--muted); }
+kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+
+/* --- Sound lanes (Phase 3) -------------------------------------------------------------- */
+.tl-label.lane { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; background: var(--bg); font-weight: 600; }
+.tl-label-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.lane-actions { display: flex; gap: 4px; font-weight: 400; }
+.lane-btn, .lane-add > summary { font-size: 11px; padding: 0 6px; border-radius: 4px; line-height: 16px; }
+.lane-add > summary { border: 1px solid var(--line); background: var(--surface); }
+.lane-add .menu-items { left: 0; right: auto; min-width: 190px; }
+.lane-btn.recording, .sb-record.recording { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tl-labels { overflow: visible; }
+.tl-body { overflow: hidden; }
+
+/* Storyboard: Record line and the take marker */
+.sb-actions { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; }
+.sb-actions .sb-open { position: static; }
+.sb-record { padding: 4px 10px; font-weight: 600; box-shadow: 0 2px 6px rgba(31, 36, 48, 0.2); }
+.sb-take { font-size: 11px; font-weight: 600; color: var(--warn); background: var(--warn-soft); border-radius: 99px; padding: 1px 8px; }
+
+/* --- Playing the whole scene -------------------------------------------------------------- */
+.player { position: fixed; inset: 0; z-index: 70; background: #111318; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.player-frame { position: relative; }
+.player-stage { background: #000; }
+.player-sketch { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fbfaf7; }
+.player-bar { display: flex; align-items: center; gap: 14px; color: #e8eaf0; width: min(100%, 1200px); padding: 0 16px; }
+.player-time { font-variant-numeric: tabular-nums; }
+.player-status { margin: 0; color: #a2a9b8; }
+.mode.single { max-width: 520px; margin: 0 auto 16px; text-align: left; }
+/* Inspector fields: label above the box, so two fit side by side in 280px. */
+.inspector .field { display: grid; gap: 2px; min-width: 0; }
+.inspector .field input[type='number'], .inspector .field select { width: 100%; min-width: 0; }
+.inspector .field.wide { grid-template-columns: 1fr; }
+.inspector .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.inspector .row > .field { flex: 1; }
+.layer.stack .layer-kind { max-width: 52px; }

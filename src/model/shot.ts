@@ -25,7 +25,15 @@ export interface Camera { x: number; y: number; width: number; /** Set once you 
  * It shows from `start` up to (not including) `end`; a missing start or end means the start or end of the shot.
  * (The field on the shot is still called `backgrounds`, so older project files keep opening.)
  */
-export interface Background { id: string; file: string; x: number; y: number; scale: number; front?: boolean; start?: number; end?: number; opacity?: number }
+export interface Background {
+  id: string; file: string; x: number; y: number; scale: number; start?: number; end?: number; opacity?: number;
+  /** Where a new layer goes in the stack when the shot has no order yet. The stack order wins once it exists. */
+  front?: boolean;
+  /** Not drawn, in the editor or in exports. */
+  hidden?: boolean;
+  /** Cannot be picked or dragged on the stage, so it is never moved by accident. */
+  locked?: boolean;
+}
 export const layerSpan = (layer: Background, shot: Shot): [number, number] => [layer.start ?? 0, layer.end ?? shot.length];
 export const visibleLayers = (shot: Shot, frame: number) => shot.backgrounds.filter((l) => frame >= (l.start ?? 0) && frame < (l.end ?? Infinity));
 
@@ -46,7 +54,13 @@ export interface Actor {
   mouth: MouthKey[];
   /** Overrides the shot's timing for this character. */
   timing?: Timing;
+  hidden?: boolean;
+  locked?: boolean;
+  /** Extras only: cycle through these poses, each held for `hold` frames. Without it an extra stands still. */
+  loop?: { poses: LoopPose[]; hold: number };
 }
+/** A pose in an extra's loop: everything except where it stands and its size, which stay the extra's own. */
+export type LoopPose = Pick<Pose, 'angles' | 'view' | 'flip' | 'rootAngle' | 'swaps'>;
 
 export interface TextItem {
   id: string;
@@ -59,7 +73,7 @@ export interface TextItem {
 
 export interface AudioClip {
   id: string;
-  kind: 'dialogue' | 'music';
+  kind: 'dialogue' | 'music' | 'sfx';
   /** File in the project's audio folder. */
   file: string;
   start: number;
@@ -82,6 +96,8 @@ export interface Shot {
   audio: AudioClip[];
   /** Font family for text and subtitles. */
   font: string;
+  /** Back-to-front order of image layers and characters, by id. Missing ids fall into place (see stackOrder). */
+  order?: string[];
 }
 
 /** scenes/<name>.json: everything about a shot except its timeline, to start new shots from. */
@@ -169,7 +185,11 @@ export function mixPoses(a: Pose, b: Pose, t: number): Pose {
 export function evaluate(shot: Shot, actor: Actor, frame: number): Pose {
   let pose: Pose;
   const keys = actor.role === 'extra' ? [] : sortedKeys(actor);
-  if (!keys.length) pose = clonePose(actor.base);
+  const loop = actor.role === 'extra' && actor.loop?.poses.length ? actor.loop : null;
+  if (loop) {
+    const step = loop.poses[Math.floor(Math.max(0, frame) / Math.max(1, loop.hold)) % loop.poses.length];
+    pose = { ...clonePose(actor.base), ...JSON.parse(JSON.stringify(step)) };
+  } else if (!keys.length) pose = clonePose(actor.base);
   else {
     const n = timingAt(shot, actor, frame);
     const f = Math.floor(frame / n) * n;
@@ -249,3 +269,35 @@ export function toSrt(shot: Shot): string {
 
 export const visibleTexts = (shot: Shot, frame: number) => shot.texts.filter((t) => frame >= t.start && frame < t.end);
 export type { Pt };
+
+// ---------------------------------------------------------------------------
+// The layer stack: image layers and characters in one back-to-front order.
+
+/**
+ * Ids of every image layer and character, back to front. The shot's own order wins; anything not in it
+ * falls into its natural place: images marked "front" at the front, other images at the back, characters
+ * just in front of the last character (or the back images).
+ */
+export function stackOrder(shot: Shot): string[] {
+  const images = new Map(shot.backgrounds.map((b) => [b.id, b]));
+  const actors = new Set(shot.actors.map((a) => a.id));
+  const order = (shot.order ?? []).filter((id) => images.has(id) || actors.has(id));
+  const placed = new Set(order);
+  const missingBack = shot.backgrounds.filter((b) => !b.front && !placed.has(b.id)).map((b) => b.id);
+  const missingActors = shot.actors.filter((a) => !placed.has(a.id)).map((a) => a.id);
+  const missingFront = shot.backgrounds.filter((b) => b.front && !placed.has(b.id)).map((b) => b.id);
+  const out = [...missingBack, ...order];
+  let lastActor = -1;
+  out.forEach((id, i) => { if (actors.has(id)) lastActor = i; });
+  if (lastActor < 0) { const firstFront = out.findIndex((id) => images.get(id)?.front); lastActor = (firstFront < 0 ? out.length : firstFront) - 1; }
+  out.splice(lastActor + 1, 0, ...missingActors);
+  out.push(...missingFront);
+  return out;
+}
+
+/** Move one layer or character to a place in the stack (0 = furthest back). */
+export function moveInStack(shot: Shot, id: string, to: number) {
+  const order = stackOrder(shot).filter((x) => x !== id);
+  order.splice(Math.max(0, Math.min(order.length, to)), 0, id);
+  shot.order = order;
+}

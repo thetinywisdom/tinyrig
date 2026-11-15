@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { landmarksToPose, type Landmark } from '../src/capture/mapping';
 import { drawList, restPose, swapOptions } from '../src/model/pose';
 import { unlockedJoints } from '../src/model/skeleton';
-import { cameraRect, defaultCameras, evaluate, flapsFromVolume, FORMATS, newShot, setKey, setMouthKey, toSrt, type Actor } from '../src/model/shot';
+import { cameraRect, defaultCameras, evaluate, flapsFromVolume, FORMATS, moveInStack, newShot, setKey, setMouthKey, stackOrder, toSrt, type Actor } from '../src/model/shot';
 import type { Pose, RigPiece, RigView } from '../src/model/types';
 
 const pose = (angles: Record<string, number>, x = 0): Pose => ({ view: 'front', flip: false, root: { x, y: 0 }, rootAngle: 0, angles });
@@ -154,5 +154,36 @@ describe('capture', () => {
     const r = landmarksToPose(body({ 13: [240, 110], 15: [340, 110] }), view, unlockedJoints('low'), {});
     expect(r.angles.elbow_L).toBeUndefined();
     expect(r.angles.shoulder_L).toBeLessThan(-70);
+  });
+});
+
+describe('layer stack', () => {
+  const img = (id: string, front = false) => ({ id, file: `${id}.png`, x: 0, y: 0, scale: 1, front });
+  const actor = (id: string) => ({ id, character: id, role: 'actor' as const, base: { view: 'front' as const, root: { x: 0, y: 0 }, rootAngle: 0, angles: {}, flip: false }, keys: [], mouth: [] });
+
+  it('puts back images, characters, then front images by default', () => {
+    const shot = { ...newShot('s'), backgrounds: [img('sky'), img('star', true), img('wall')], actors: [actor('a'), actor('b')] };
+    expect(stackOrder(shot)).toEqual(['sky', 'wall', 'a', 'b', 'star']);
+  });
+
+  it('keeps a stored order and slots new things into place', () => {
+    const shot = { ...newShot('s'), backgrounds: [img('sky'), img('star', true)], actors: [actor('a')] };
+    moveInStack(shot, 'star', 1); // between the sky and the character
+    expect(stackOrder(shot)).toEqual(['sky', 'star', 'a']);
+    shot.actors.push(actor('b'));
+    shot.backgrounds.push(img('rain', true));
+    expect(stackOrder(shot)).toEqual(['sky', 'star', 'a', 'b', 'rain']);
+    shot.backgrounds = shot.backgrounds.filter((b) => b.id !== 'star');
+    expect(stackOrder(shot)).toEqual(['sky', 'a', 'b', 'rain']);
+  });
+
+  it('an extra with a loop cycles its poses and keeps its place', () => {
+    const extra = { ...actor('x'), role: 'extra' as const, loop: { hold: 12, poses: [{ angles: { neck: 10 } }, { angles: { neck: -10 } }] as never } };
+    extra.base.root = { x: 50, y: 60 };
+    const shot = newShot('s');
+    expect(evaluate(shot, extra, 0).angles.neck).toBe(10);
+    expect(evaluate(shot, extra, 12).angles.neck).toBe(-10);
+    expect(evaluate(shot, extra, 24).angles.neck).toBe(10);
+    expect(evaluate(shot, extra, 30).root).toEqual({ x: 50, y: 60 });
   });
 });

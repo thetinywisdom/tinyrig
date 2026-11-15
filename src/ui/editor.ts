@@ -1,31 +1,34 @@
-// The editor: one stage showing a shot, a tabbed side panel, and a timeline.
-// This file holds the state, drawing, undo and stage interactions; the panels
-// and the timeline live in their own files and talk to this class.
+// The shot editor: a filmstrip of every shot on top, the stage in the middle, an inspector on the right
+// and the timeline below. This file holds the state, drawing, undo and stage interactions; the inspector,
+// the timeline and the filmstrip live in their own files and talk to this class.
 import { AudioEngine } from '../audio/audio';
-import { EASE_DRAWER, enter } from './motion';
+import { stopWebcam } from '../capture/panel';
 import { placeActor } from '../model/actor';
 import {
   apply, boneMatrices, canBend, clampToLimit, defaultVariant, invert, normDeg, restPose, rootMatrix, solveLimbIK, swapOptions, swingAround,
 } from '../model/pose';
-import { moveKnob } from '../model/pads';
 import {
   JOINTS, JOINT_BY_ID, JOINT_OF_BONE, LIMBS, ROOT_BONE, unlockedJoints, VIEWS, type BoneId, type JointId, type LimbId,
 } from '../model/skeleton';
 import {
-  cameraRect, evaluate, formatById, FORMATS, keyAt, MAX_ACTORS, newShot, setKey, sortedKeys, syncCameras, uid, visibleLayers, visibleTexts,
-  type Actor, type Shot,
+  cameraRect, evaluate, formatById, keyAt, setKey, sortedKeys, stackOrder, syncCameras, uid, visibleLayers, visibleTexts,
+  type Actor, type AudioClip, type Shot,
 } from '../model/shot';
+import { panelStarts, shotClips, type Panel, type SceneClip } from '../model/storyboard';
 import type { Pose, Pt, Rect, Rig, RigView, SavedPose } from '../model/types';
 import type { CharacterEntry, Project } from '../project/project';
 import { StageView, type DrawActor, type Marker } from '../render/stage';
-import { padControl, type PadView } from './controls';
+import { finishedFrame } from '../render/thumb';
 import { h } from './dom';
-import { stopWebcam } from '../capture/panel';
-import { renderPanel, setSwap } from './panels';
+import { renderFilmstrip } from './filmstrip';
+import { renderInspector, setSwap } from './inspector';
+import { EASE_OUT, enter } from './motion';
 import { Timeline } from './timeline';
 
-export type Tab = 'rig' | 'scene' | 'animate' | 'sound' | 'capture' | 'export';
-export type SceneTool = 'characters' | 'backgrounds' | 'framing';
+/** What the inspector shows: the thing last picked on the stage, the layer list or the timeline. */
+export type Focus = 'shot' | 'actor' | 'layer' | 'text' | 'camera' | 'clip' | 'export';
+/** What dragging on the stage does. Pose is the normal state; the others are entered from the inspector. */
+export type Mode = 'pose' | 'rig' | 'place' | 'capture';
 export type Selection = JointId | 'root' | null;
 type Drag =
   | { type: 'pan'; last: Pt }
@@ -47,48 +50,62 @@ export interface EditorContext {
   /** Which shot to open, and a character to drop into it straight away (just imported). */
   shotName?: string;
   addCharacter?: string;
+  /** Frame to open at. */
+  frame?: number;
   onChanged: () => void;
-  onShot: (name: string) => void;
+  /** Open a storyboard panel's shot (making one if it has none). */
+  openPanel: (panel: Panel, frame?: number) => void;
   /** Back to the storyboard. */
-  back?: () => void;
+  back: () => void;
   importCharacter: () => void;
   download: (name: string, bytes: Uint8Array, type: string) => void;
   menu: () => { label: string; run: () => void }[];
   status: () => string;
   /** Short save state for the top bar: "Saving…", "Saved ✓" or a warning. */
   saveState: () => string;
+  /** Play the whole scene, every shot and sketch in turn with its sound, from a scene frame. */
+  playScene: (fromSceneFrame: number) => void;
 }
 
-/** The path through the tool, left to right. Capture is part of Animate. */
-const STEPS: [Tab, string][] = [['rig', 'Character'], ['scene', 'Scene'], ['animate', 'Animate'], ['sound', 'Sound'], ['export', 'Export']];
-const HINTS: Record<Tab, string> = {
-  rig: 'Drag a pivot to move it. The square is the point the character turns around.',
-  scene: 'Drag characters, image layers or the blue frame, whichever is chosen above.',
-  animate: 'Drag any part of the character to pose it. Each pose is saved on its frame. Space plays; hold Space and drag to move the view.',
-  sound: 'New sound and text start at the playhead. Drag them on the timeline to move them.',
+const HINTS: Record<Mode | 'camera', string> = {
+  pose: 'Drag a character to pose it; each pose is saved on its frame. Click an image or text to move it. Space plays. Press ? for shortcuts.',
+  rig: 'Drag a pivot to move it. The square is the point the character turns around. Press Done when finished.',
+  place: 'Drag the character to move it in every frame at once. Press Done when finished.',
   capture: 'Load a photo of a pose, or use the webcam, to pose the selected character.',
-  export: 'Each output shape uses its own framing from the Scene step.',
+  camera: 'Drag inside the frame to move it, or a corner to resize it. Each output shape keeps its own framing.',
 };
+const SHORTCUTS: [string, string][] = [
+  ['Space', 'Play or stop. Hold and drag to move the view.'],
+  [', and .', 'One frame back or forward (arrow keys too; Shift for 12)'],
+  ['[ and ]', 'Previous or next shot'],
+  ['K', 'Key the pose on this frame'],
+  ['\\', 'Timeline: this shot, or the whole scene'],
+  ['Delete', 'Remove the selected image, text or sound'],
+  ['Esc', 'Finish rig or placing; then clear the selection'],
+  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo'],
+  ['Ctrl+↑', 'Back to the storyboard'],
+  ['Pinch, Ctrl+wheel', 'Zoom the stage. Two fingers or the wheel move it.'],
+  ['?', 'This list'],
+];
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 export class Editor {
   project: Project;
   shot!: Shot;
   frame = 0;
-  tab: Tab = 'animate';
-  sceneTool: SceneTool = 'characters';
+  focus: Focus = 'shot';
+  mode: Mode = 'pose';
+  /** The current character: the one the timeline, mouth row and character bar are about. */
   selId: string | null = null;
   selJoint: Selection = null;
-  selPad: string | null = null;
   selBg: string | null = null;
   selText: string | null = null;
+  selClip: string | null = null;
   formatId = 'yt';
   showFrame = true;
-  /** The side panel holds everything beyond the basics. It starts closed so the stage has the window. */
-  panelOpen = false;
-  /** Which "More" groups are open in the panel. */
+  /** Which folded groups in the inspector are open. */
   open = new Set<string>();
-  /** Opens every "More" group: used by the checks in /scripts. */
+  /** Opens every folded group: used by the checks in /scripts. */
   openAll = false;
   /** Pose thumbnails, kept out of undo snapshots because they are large and never change. */
   private thumbs = new Map<string, string>();
@@ -100,14 +117,15 @@ export class Editor {
   poses = new Map<string, Pose>();
   unsaved = new Set<string>();
   poseFilter = '';
-  /** A photo shown faintly on the stage while capturing a pose from it. */
   stage = new StageView();
   audio = new AudioEngine();
   timeline!: Timeline;
 
   private drag: Drag | null = null;
+  /** Whether the current drag has moved anything. A click without moving only selects. */
+  private dragMoved = false;
   private spaceDown = false;
-  private padViews = new Map<string, PadView>();
+  private spacePanned = false;
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private saved = '';
@@ -115,17 +133,17 @@ export class Editor {
   private disposers: (() => void)[] = [];
 
   private toolbar = h('header', { class: 'toolbar' });
-  panel = h('aside', { class: 'panel' });
+  panel = h('aside', { class: 'panel inspector', 'aria-label': 'Inspector' });
   private stageHost = h('div', { class: 'stage' });
-  private padLayer = h('div', { class: 'pad-layer' });
   private body = h('div', { class: 'body' });
-  /** The main action of the current step, top left of the stage. */
+  /** "+ Add" and the current mode's Done button, top left of the stage. */
   private actionBar = h('div', { class: 'action-bar' });
   /** The few controls changed all the time, next to the selected character. */
   private charBar = h('div', { class: 'char-bar', hidden: true });
   private emptyNote = h('div', { class: 'empty-note', hidden: true });
   private timelineHost = h('div', { class: 'timeline' });
   private hint = h('footer', { class: 'hint' });
+  private keysHelp = h('div', { class: 'keys-help', hidden: true, role: 'dialog', 'aria-label': 'Keyboard shortcuts' });
 
   private constructor(private host: HTMLElement, public ctx: EditorContext) {
     this.project = ctx.project;
@@ -140,19 +158,17 @@ export class Editor {
   private async init() {
     const { project, ctx } = this;
     this.body.replaceChildren(h('div', { class: 'work' }, this.stageHost, this.timelineHost), this.panel);
-    this.host.replaceChildren(h('div', { class: 'editor' }, this.toolbar, this.body, this.hint));
-    this.layout();
+    this.host.replaceChildren(h('div', { class: 'editor' }, this.toolbar, this.body, this.hint, this.keysHelp));
     await this.stage.init(this.stageHost);
-    this.stageHost.append(this.padLayer, this.emptyNote, this.charBar, this.actionBar,
+    this.stageHost.append(this.emptyNote, this.charBar, this.actionBar,
       h('button', { class: 'fit', title: 'Fit the frame in the window', onclick: () => { this.fitView(); this.redraw(); } }, 'Fit'));
     for (const c of project.characters) this.stage.setCharacter(c.name, c.data.imp);
 
-    if (!project.shots.length) project.shots.push(newShot('Shot 1'));
     this.shot = project.shots.find((s) => s.name === ctx.shotName) ?? project.shots[0];
-    // A project made before shots existed: put its characters on the stage.
-    if (!this.shot.actors.length && !ctx.addCharacter) for (const c of project.characters.slice(0, MAX_ACTORS)) this.addActor(c.name, false);
     if (ctx.addCharacter) this.addActor(ctx.addCharacter, false);
     this.selId = this.shot.actors.find((a) => a.character === ctx.addCharacter)?.id ?? this.shot.actors[0]?.id ?? null;
+    if (ctx.addCharacter && this.selId) this.focus = 'actor';
+    this.frame = Math.max(0, Math.min(this.shot.length - 1, ctx.frame ?? 0));
 
     await this.loadAssets();
     this.timeline = new Timeline(this, this.timelineHost);
@@ -162,14 +178,14 @@ export class Editor {
     requestAnimationFrame(() => { this.fitView(); this.refresh(); });
   }
 
-  /** Background images, sounds and fonts the shot uses. Missing or unreadable files are skipped. */
+  /** Images, sounds and fonts the shot and scene use. Missing or unreadable files are skipped. */
   async loadAssets() {
     const { project } = this;
     for (const bg of this.shot.backgrounds) {
       const bytes = project.assets.get(`backgrounds/${bg.file}`);
       if (bytes) await this.stage.setBackground(bg.file, bytes).catch(() => undefined);
     }
-    for (const clip of this.shot.audio) {
+    for (const clip of project.storyboard?.sound ?? []) {
       const bytes = project.assets.get(`audio/${clip.file}`);
       if (bytes) await this.audio.load(clip.file, bytes).catch(() => undefined);
     }
@@ -204,12 +220,43 @@ export class Editor {
   unlocked(actor = this.sel()): Set<JointId> { return unlockedJoints(this.rig(actor)?.level ?? 'high'); }
   format() { return formatById(this.formatId); }
   camera() { return this.shot.cameras[this.formatId]; }
-  /** What is drawn for an actor: in the Rig tab the selected one stands in its rest pose. */
+  /** This shot's panel on the storyboard. */
+  panel_(): Panel | null { return this.project.storyboard?.panels.find((p) => p.shot === this.shot.name) ?? null; }
+  /** The scene's sound as heard in this shot: starts in this shot's frames. */
+  clips(): (AudioClip & { scene: SceneClip })[] {
+    const sb = this.project.storyboard, p = this.panel_();
+    return sb && p ? shotClips(sb, this.project.shots, p.id) : [];
+  }
+  /** Where this shot starts in the scene, in frames. */
+  sceneOffset(): number {
+    const sb = this.project.storyboard, p = this.panel_();
+    return sb && p ? panelStarts(sb, this.project.shots).get(p.id) ?? 0 : 0;
+  }
+  /** What is drawn for an actor: while editing the rig the selected one stands in its rest pose. */
   private shownPose(actor: Actor): Pose | null {
     const pose = this.pose(actor), rig = this.rig(actor);
     if (!pose || !rig?.views[pose.view]) return null;
-    if (this.tab === 'rig' && actor.id === this.selId) return { ...restPose(rig.views[pose.view]!, pose.view, pose.root), scale: pose.scale };
+    if (this.mode === 'rig' && actor.id === this.selId) return { ...restPose(rig.views[pose.view]!, pose.view, pose.root), scale: pose.scale };
     return pose;
+  }
+
+  // --- selection ---------------------------------------------------------------
+  /** Pick what the inspector shows. Characters stay current for the timeline even when something else is picked. */
+  select(focus: Focus, id: string | null = null) {
+    if (this.mode !== 'pose' && !(focus === 'actor' && id === this.selId)) this.setMode('pose', false);
+    this.focus = focus;
+    if (focus === 'actor' && id && id !== this.selId) { this.selId = id; this.selJoint = null; }
+    this.selBg = focus === 'layer' ? id : null;
+    this.selText = focus === 'text' ? id : null;
+    this.selClip = focus === 'clip' ? id : null;
+  }
+  setMode(mode: Mode, refresh = true) {
+    if (mode === this.mode) return;
+    if (this.mode === 'capture') stopWebcam(); // the camera is only on while capturing
+    this.mode = mode;
+    if (mode !== 'pose') this.focus = 'actor';
+    this.selJoint = null;
+    if (refresh) this.refresh();
   }
 
   // --- timeline state ----------------------------------------------------------
@@ -229,7 +276,7 @@ export class Editor {
   edited(actor = this.sel()) {
     const pose = this.pose(actor);
     if (!actor || !pose) return;
-    if (actor.role === 'extra') { actor.base = clone(pose); return; } // extras hold one pose
+    if (actor.role === 'extra') { actor.base = clone(pose); return; } // extras hold one pose (or loop)
     if (this.autoKey) {
       // Auto-record: the pose is stored on this frame, so posing two frames gives an animation straight away.
       if (!actor.keys.length) actor.base = clone(pose);
@@ -261,7 +308,7 @@ export class Editor {
     if (f === this.frame && !opts.keep) { this.timeline.draw(); return; }
     this.frame = f;
     this.evaluateAll();
-    if (opts.scrub) this.audio.scrub(this.shot, f);
+    if (opts.scrub) this.audio.scrub(this.clips(), f);
     this.redraw();
     this.timeline.draw();
     if (!this.playing && !opts.scrub) { this.timeline.renderBar(); this.renderPanel(); }
@@ -272,7 +319,7 @@ export class Editor {
     this.playing = true;
     if (this.frame >= this.shot.length - 1) this.frame = 0;
     const from = this.frame, t0 = performance.now();
-    this.audio.play(this.shot, from);
+    this.audio.play(this.clips(), from);
     const tick = () => {
       if (!this.playing) return;
       const f = from + Math.floor(((performance.now() - t0) / 1000) * 24);
@@ -284,14 +331,14 @@ export class Editor {
     this.timeline.renderBar();
   }
   stop() {
+    const was = this.playing;
     this.playing = false;
     cancelAnimationFrame(this.playTimer);
     this.audio.stop();
-    this.timeline.renderBar();
-    this.renderPanel();
+    if (was) { this.timeline.renderBar(); this.renderPanel(); }
   }
 
-  // --- scene -------------------------------------------------------------------
+  // --- adding things ---------------------------------------------------------------
   /** Put a character on the stage, sized to sit comfortably in a 1080-tall frame. */
   addActor(character: string, refresh = true): Actor | null {
     const entry = this.project.characters.find((c) => c.name === character);
@@ -299,13 +346,15 @@ export class Editor {
     if (!entry || !actor) return null;
     this.shot.actors.push(actor);
     if (!this.stage.hasCharacter(character)) this.stage.setCharacter(character, entry.data.imp);
-    this.selId = actor.id;
+    this.select('actor', actor.id);
     if (refresh) { this.evaluateAll(); this.refresh(); }
     return actor;
   }
 
-  // --- layers: images and text on the timeline ----------------------------------------
-  /** Ask for image files and add each as a layer behind or in front of the characters, lasting the whole shot. */
+  /**
+   * Ask for image files and add each as a layer lasting the whole shot. A background covers the stage and starts
+   * locked, so dragging a character never moves it by accident. A foreground starts small, in the middle of the frame.
+   */
   addImageLayer(front: boolean) {
     const input = h('input', {
       type: 'file', accept: 'image/*,.svg', multiple: true,
@@ -316,16 +365,16 @@ export class Editor {
             await this.stage.setBackground(name, bytes);
             this.project.assets.set(`backgrounds/${name}`, bytes);
             const size = this.stage.backgroundSize(name)!, { stage } = this.shot, cam = this.camera();
-            // A background covers the whole stage. An ornament starts small, in the middle of the frame.
             const scale = Math.round((front ? Math.min(1, (cam.width * 0.3) / size.w) : Math.max(stage.w / size.w, stage.h / size.h)) * 100) / 100;
             const centre = front ? { x: cam.x, y: cam.y } : { x: stage.w / 2, y: stage.h / 2 };
-            const layer = { id: uid(), file: name, scale, front: front || undefined, x: centre.x - (size.w * scale) / 2, y: centre.y - (size.h * scale) / 2 };
+            const layer = { id: uid(), file: name, scale, front: front || undefined, locked: front ? undefined : true, x: centre.x - (size.w * scale) / 2, y: centre.y - (size.h * scale) / 2 };
+            // A background goes to the very back, a foreground to the very front.
+            const order = stackOrder(this.shot);
             this.shot.backgrounds.push(layer);
-            this.selBg = layer.id;
-            this.selText = null;
+            this.shot.order = front ? [...order, layer.id] : [layer.id, ...order];
+            this.select('layer', layer.id);
           } catch (err) { this.say(err instanceof Error ? err.message : String(err)); }
         }
-        if (this.tab === 'scene') this.sceneTool = 'backgrounds';
         this.refresh();
       },
     });
@@ -337,8 +386,21 @@ export class Editor {
     const end = Math.max(this.frame + 1, Math.min(shot.length, this.frame + 48));
     const item = { id: uid(), kind: 'text' as const, text: 'Text', start: this.frame, end, x: cam.x, y: cam.y - cam.width * 0.15, size: Math.round(cam.width * 0.06), color: '#1f2430' };
     shot.texts.push(item);
-    this.selText = item.id;
-    this.selBg = null;
+    this.select('text', item.id);
+    this.refresh();
+  }
+  /** Remove whatever image, text, sound or character is selected. Undo brings it back. */
+  removeSelected() {
+    const { shot } = this;
+    if (this.focus === 'layer' && this.selBg) shot.backgrounds = shot.backgrounds.filter((b) => b.id !== this.selBg);
+    else if (this.focus === 'text' && this.selText) shot.texts = shot.texts.filter((t) => t.id !== this.selText);
+    else if (this.focus === 'clip' && this.selClip && this.project.storyboard?.sound) this.project.storyboard.sound = this.project.storyboard.sound.filter((c) => c.id !== this.selClip);
+    else if (this.focus === 'actor' && this.selId) {
+      shot.actors = shot.actors.filter((a) => a.id !== this.selId);
+      this.selId = shot.actors[0]?.id ?? null;
+      this.evaluateAll();
+    } else return;
+    this.select('shot');
     this.refresh();
   }
 
@@ -351,7 +413,7 @@ export class Editor {
   // Whole-state snapshots taken whenever an action finishes. One drag is one step.
   private snapshot() {
     return JSON.stringify({
-      shot: this.shot, frame: this.frame, selId: this.selId, pads: this.project.pads,
+      shot: this.shot, frame: this.frame, selId: this.selId, sound: this.project.storyboard?.sound ?? null,
       rigs: this.project.characters.map((c) => c.data.rig), poses: [...this.poses], unsaved: [...this.unsaved],
       library: this.project.poses.map(({ thumb, ...rest }) => { if (thumb) this.thumbs.set(rest.name, thumb); return rest; }),
     });
@@ -371,14 +433,20 @@ export class Editor {
     to.push(this.saved);
     this.saved = from.pop()!;
     const s = JSON.parse(this.saved);
+    for (const k of Object.keys(this.shot)) if (!(k in s.shot)) delete (this.shot as unknown as Record<string, unknown>)[k];
     Object.assign(this.shot, s.shot);
     this.frame = s.frame;
     this.selId = s.selId;
-    this.project.pads.splice(0, this.project.pads.length, ...s.pads);
+    if (this.project.storyboard) this.project.storyboard.sound = s.sound ?? undefined;
     this.project.poses.splice(0, this.project.poses.length, ...s.library.map((p: SavedPose) => ({ ...p, thumb: this.thumbs.get(p.name) })));
     this.project.characters.forEach((c, i) => { if (s.rigs[i]) Object.assign(c.data.rig, s.rigs[i]); });
     this.poses = new Map(s.poses);
     this.unsaved = new Set(s.unsaved);
+    // Whatever was selected may be gone.
+    if (this.selBg && !this.shot.backgrounds.some((b) => b.id === this.selBg)) this.select('shot');
+    if (this.selText && !this.shot.texts.some((t) => t.id === this.selText)) this.select('shot');
+    if (this.selClip && !this.project.storyboard?.sound?.some((c) => c.id === this.selClip)) this.select('shot');
+    if (this.focus === 'actor' && !this.sel()) this.select('shot');
     this.ctx.onChanged();
     void this.loadAssets().then(() => this.refresh());
   }
@@ -389,18 +457,19 @@ export class Editor {
   private drawActors(): DrawActor[] {
     const out: DrawActor[] = [];
     for (const a of this.shot.actors) {
+      if (a.hidden) continue;
       const rig = this.rig(a), pose = this.shownPose(a);
       if (rig && pose) out.push({ id: a.id, rig, pose, unlocked: this.unlocked(a), extra: a.role === 'extra' && a.id !== this.selId });
     }
     return out;
   }
-
+  /** Handles on the selected character: IK handles while posing, every pivot while editing the rig. */
   private markers(): { list: Marker[]; ids: (Drag | null)[] } {
     const list: Marker[] = [], ids: (Drag | null)[] = [];
     const actor = this.sel(), v = this.view(), pose = actor && this.shownPose(actor);
-    if (!actor || !v || !pose || (this.tab !== 'rig' && this.tab !== 'animate')) return { list, ids };
+    if (!actor || actor.hidden || !v || !pose || this.focus !== 'actor' || (this.mode !== 'rig' && this.mode !== 'pose')) return { list, ids };
     const unlocked = this.unlocked(), mats = boneMatrices(v, pose, unlocked);
-    if (this.tab === 'rig') {
+    if (this.mode === 'rig') {
       for (const j of JOINTS) {
         const pivot = v.pivots[j.id];
         if (!pivot) continue;
@@ -446,18 +515,17 @@ export class Editor {
     const sel = this.sel(), selDraw = actors.find((a) => a.id === this.selId);
     const guide = this.showFrame ? { format: this.format(), camera: this.camera() } : null;
     this.stage.draw({
-      shot: this.shot, actors, texts: visibleTexts(this.shot, this.frame), layers: visibleLayers(this.shot, this.frame),
-      ghosts: this.onion && this.tab === 'animate' && sel && selDraw ? { actor: selDraw, poses: this.ghostPoses(sel) } : undefined,
+      shot: this.shot, actors, order: stackOrder(this.shot),
+      texts: visibleTexts(this.shot, this.frame), layers: visibleLayers(this.shot, this.frame).filter((l) => !l.hidden),
+      ghosts: this.onion && this.mode === 'pose' && sel && selDraw ? { actor: selDraw, poses: this.ghostPoses(sel) } : undefined,
     }, guide ?? { format: this.format(), camera: this.camera() });
     let box: Rect | null = null;
-    if (this.tab === 'scene' && this.sceneTool === 'characters' && sel) box = this.stage.actor({ id: sel.id, rig: this.rig(sel)! })?.bounds() ?? null;
-    if (this.selBg && (this.tab !== 'scene' || this.sceneTool === 'backgrounds')) {
+    if (this.mode === 'place' && sel && selDraw) box = this.stage.actor({ id: sel.id, rig: this.rig(sel)! })?.bounds() ?? null;
+    if (this.focus === 'layer' && this.selBg) {
       const bg = this.shot.backgrounds.find((b) => b.id === this.selBg), size = bg && this.stage.backgroundSize(bg.file);
-      if (bg && size) box = { x: bg.x, y: bg.y, w: size.w * bg.scale, h: size.h * bg.scale };
+      if (bg && size && !bg.hidden) box = { x: bg.x, y: bg.y, w: size.w * bg.scale, h: size.h * bg.scale };
     }
-    this.stage.drawOverlay(this.markers().list, guide && { ...guide, active: this.tab === 'scene' && this.sceneTool === 'framing' }, this.shot.stage, box);
-    const pose = this.pose();
-    for (const [id, pv] of this.padViews) pv.set(pose?.pads?.[id] ?? { x: 0, y: 0 });
+    this.stage.drawOverlay(this.markers().list, guide && { ...guide, active: this.focus === 'camera' }, this.shot.stage, box);
     this.placeCharBar();
   }
 
@@ -472,60 +540,37 @@ export class Editor {
     this.charBar.style.top = `${Math.max(56, top.y - this.charBar.offsetHeight - 14)}px`;
   }
 
-  /** Open or close the side panel, and show the timeline only where it is used. */
-  layout() {
-    this.body.classList.toggle('panel-closed', !this.panelOpen);
-    this.body.classList.toggle('no-timeline', this.tab === 'rig' || this.tab === 'scene' || this.tab === 'export');
-  }
-  togglePanel(open = !this.panelOpen) {
-    this.panelOpen = open;
-    this.layout();
-    this.renderBars();
-    this.renderPanel();
-    // Opened now and then, so it may move: a short slide in from the right edge. Closing is instant.
-    if (open) enter(this.panel, 'translateX(16px)', 220, EASE_DRAWER);
-    // The stage just changed width: keep the frame centred in it.
-    requestAnimationFrame(() => { this.stage.app.resize(); this.fitView(); this.redraw(); });
-  }
-  /** Open the panel and press one of its buttons: how the stage's main action reaches panel features. */
-  private viaPanel(id: string) {
-    this.panelOpen = true;
-    this.layout();
-    this.renderPanel();
-    document.getElementById(id)?.click();
-    this.renderBars();
-  }
-
-  /** The stage's own controls: the step's main action, the selected character's bar, and the empty-stage note. */
+  /** The stage's own controls: + Add (or Done, in a mode), the selected character's bar, and the empty-stage note. */
   renderBars() {
-    const { project, shot } = this, tab = this.tab, actor = this.sel(), pose = this.pose(), rig = this.rig(), v = this.view();
-    const more = h('button', { id: 'more', 'aria-expanded': String(this.panelOpen), onclick: () => this.togglePanel() }, this.panelOpen ? 'Hide options' : 'More options');
-    const formats = () => h('select', { id: 'format', 'aria-label': 'Output shape', title: 'Output shape to frame and export', onchange: (e: Event) => { this.formatId = (e.target as HTMLSelectElement).value; this.fitView(); this.refresh(); } },
-      FORMATS.map((f) => h('option', { value: f.id, selected: f.id === this.formatId }, `${f.label} · ${f.w}×${f.h}`)));
-    const addCharacter = () => h('select', { id: 'bar-add-actor', class: 'primary', 'aria-label': 'Add a character', onchange: (e: Event) => {
-      const value = (e.target as HTMLSelectElement).value;
-      if (value === '+') this.ctx.importCharacter(); else if (value) this.addActor(value);
-    } }, h('option', { value: '' }, 'Add a character…'), project.characters.map((c) => h('option', { value: c.name }, c.name)), h('option', { value: '+' }, 'Import a new one…'));
-    const tool = (t: SceneTool, text: string) => h('button', { class: this.sceneTool === t ? 'selected' : '', 'data-bar-tool': t, onclick: () => { this.sceneTool = t; this.refresh(); } }, text);
-
-    const bars: Record<Tab, (Node | null)[]> = {
-      rig: [h('button', { class: 'primary', id: 'bar-import', onclick: () => this.ctx.importCharacter() }, 'Import a character'), more],
-      scene: [addCharacter(), h('div', { class: 'seg', role: 'group', 'aria-label': 'What to drag' }, tool('characters', 'Characters'), tool('backgrounds', 'Layers'), tool('framing', 'Framing')), formats(), more],
-      animate: [h('button', { id: 'bar-capture', disabled: !actor, onclick: () => { this.tab = 'capture'; this.panelOpen = true; this.refresh(); } }, 'Pose from a photo'), more],
-      capture: [h('button', { class: 'primary', id: 'bar-back', onclick: () => { this.tab = 'animate'; this.refresh(); } }, 'Back to Animate')],
-      sound: [h('button', { class: 'primary', id: 'bar-dialogue', onclick: () => this.viaPanel('add-dialogue') }, 'Add dialogue'), h('button', { id: 'bar-subtitle', onclick: () => this.viaPanel('add-subtitle') }, 'Add subtitle'), more],
-      export: [formats(), h('button', { class: 'primary', id: 'bar-export', onclick: () => this.viaPanel('export-mp4') }, 'Export video'), more],
-    };
-    this.actionBar.replaceChildren(...(bars[tab].filter(Boolean) as Node[]));
+    const { project, shot } = this, actor = this.sel(), pose = this.pose(), rig = this.rig(), v = this.view();
+    const close = (e: Event) => (e.target as HTMLElement).closest('details')?.removeAttribute('open');
+    // Characters already in this scene come first, so a scene's cast is quick to reuse.
+    const inScene = new Set(project.shots.flatMap((s) => s.actors.map((a) => a.character)));
+    const chars = [...project.characters].sort((a, b) => Number(inScene.has(b.name)) - Number(inScene.has(a.name)));
+    const addMenu = h('details', { class: 'menu add-menu', id: 'add' },
+      h('summary', { class: 'primary' }, '+ Add'),
+      h('div', { class: 'menu-items' },
+        h('p', { class: 'menu-head' }, 'Character'),
+        chars.map((c) => h('button', { 'data-add-character': c.name, onclick: (e: Event) => { close(e); this.addActor(c.name); } },
+          c.name, inScene.has(c.name) ? h('span', { class: 'meta' }, ' · in this scene') : null)),
+        h('button', { id: 'add-import', onclick: (e: Event) => { close(e); this.ctx.importCharacter(); } }, 'Import a new character…'),
+        h('hr', {}),
+        h('button', { id: 'add-background', onclick: (e: Event) => { close(e); this.addImageLayer(false); } }, 'Background image…'),
+        h('button', { id: 'add-foreground', onclick: (e: Event) => { close(e); this.addImageLayer(true); } }, 'Foreground image…'),
+        h('button', { id: 'add-text', onclick: (e: Event) => { close(e); this.addTextLayer(); } }, 'Text')));
+    const done = (label: string) => h('button', { class: 'primary', id: 'mode-done', onclick: () => this.setMode('pose') }, label);
+    this.actionBar.replaceChildren(
+      this.mode === 'rig' ? done('Done editing the rig') : this.mode === 'place' ? done('Done placing') : this.mode === 'capture' ? done('Done') : addMenu);
 
     // An empty stage says what to do next.
-    this.emptyNote.hidden = shot.actors.length > 0;
-    if (!shot.actors.length) this.emptyNote.replaceChildren(
-      h('p', {}, project.characters.length ? 'This shot has no characters yet.' : 'Start by importing a character.'),
-      project.characters.length ? addCharacter() : h('button', { class: 'primary', onclick: () => this.ctx.importCharacter() }, 'Import a character'));
+    this.emptyNote.hidden = shot.actors.length > 0 || shot.backgrounds.length > 0;
+    if (!this.emptyNote.hidden) this.emptyNote.replaceChildren(...[
+      h('p', {}, project.characters.length ? 'This shot is empty. Add a character or an image with + Add, top left.' : 'Start by importing a character.'),
+      project.characters.length ? null : h('button', { class: 'primary', onclick: () => this.ctx.importCharacter() }, 'Import a character'),
+    ].filter((n): n is HTMLButtonElement | HTMLParagraphElement => !!n));
 
     // View, flip, mouth and hands live on the character, since they change all the time.
-    const show = tab === 'animate' && !!actor && !!pose && !!rig && !!v;
+    const show = this.mode === 'pose' && this.focus === 'actor' && !!actor && !actor.hidden && !!pose && !!rig && !!v;
     this.charBar.hidden = !show;
     if (!show) return;
     const changed = () => { this.edited(); this.refresh(); };
@@ -542,39 +587,17 @@ export class Editor {
     ].filter(Boolean) as Node[]));
   }
 
-  /** Controller pads float over the stage in the Animate tab. */
-  private renderPads() {
-    this.padViews = new Map();
-    this.padLayer.replaceChildren();
-    if (this.tab !== 'animate') return;
-    for (const pad of this.project.pads) {
-      const pv = padControl({
-        pad, selected: this.selPad === pad.id,
-        onKnob: (knob) => { const pose = this.pose(); if (pose) { moveKnob(pose, pad, knob); this.redraw(); } },
-        onEnd: () => { this.edited(); this.refresh(); },
-        onSelect: () => {
-          if (this.selPad === pad.id) return;
-          this.selPad = pad.id;
-          this.renderPanel();
-          this.padLayer.querySelectorAll('.pad-ctl').forEach((n) => n.classList.toggle('selected', n === pv.el));
-        },
-        onMoved: (at) => { pad.at = at; this.commit(); },
-      });
-      this.padViews.set(pad.id, pv);
-      this.padLayer.appendChild(pv.el);
-    }
-  }
-
-  renderPanel() { renderPanel(this); }
+  renderPanel() { renderInspector(this); }
 
   /** A short message in the bar at the bottom. */
   say(text: string) {
     this.hint.textContent = text;
     this.hint.classList.add('notice');
     clearTimeout(this.sayTimer);
-    this.sayTimer = window.setTimeout(() => { this.hint.classList.remove('notice'); this.hint.textContent = HINTS[this.tab]; }, 6000);
+    this.sayTimer = window.setTimeout(() => { this.hint.classList.remove('notice'); this.hint.textContent = this.hintText(); }, 6000);
   }
   private sayTimer = 0;
+  private hintText() { return this.focus === 'camera' && this.mode === 'pose' ? HINTS.camera : HINTS[this.mode]; }
   /** Result of the last video export, for the checks in /scripts. */
   lastExport: { bytes: Uint8Array; video: string; audio: string | null } | null = null;
 
@@ -583,14 +606,10 @@ export class Editor {
    * Leaves the stage drawn for output: redraw() afterwards to get the editor view back.
    */
   outputFrame(frame: number, burnSubtitles: boolean, scale = 1): HTMLCanvasElement {
-    const actors: DrawActor[] = [];
-    for (const a of this.shot.actors) {
-      const rig = this.rig(a);
-      const pose = frame === this.frame ? this.pose(a) : evaluate(this.shot, a, frame);
-      if (rig && pose && rig.views[pose.view]) actors.push({ id: a.id, rig, pose, unlocked: this.unlocked(a), extra: a.role === 'extra' });
-    }
-    const texts = visibleTexts(this.shot, frame).filter((t) => t.kind === 'text' || burnSubtitles);
-    this.stage.draw({ shot: this.shot, actors, texts, layers: visibleLayers(this.shot, frame) }, { format: this.format(), camera: this.camera() });
+    const out = finishedFrame(this.project, this.shot, frame, { subtitles: burnSubtitles });
+    // On the frame being edited, show the poses on screen (a change not yet keyed included).
+    if (frame === this.frame) for (const a of out.actors) a.pose = this.pose(this.shot.actors.find((x) => x.id === a.id)!) ?? a.pose;
+    this.stage.draw(out, { format: this.format(), camera: this.camera() });
     return this.stage.renderFrame(this.format(), this.camera(), scale);
   }
 
@@ -598,40 +617,44 @@ export class Editor {
   refresh() {
     if (this.disposed) return;
     if (!this.drag) this.commit();
-    this.layout();
-    this.renderPads();
     this.renderBars();
     this.redraw();
     this.renderToolbar();
     this.renderPanel();
     this.timeline.render();
-    if (!this.hint.classList.contains('notice')) this.hint.textContent = HINTS[this.tab];
+    if (!this.hint.classList.contains('notice')) this.hint.textContent = this.hintText();
   }
 
   renderToolbar() {
-    const { project, ctx } = this;
+    const { ctx } = this;
     this.toolbar.replaceChildren(
-      ...(ctx.back ? [h('button', { id: 'to-storyboard', title: 'Back to the storyboard', onclick: ctx.back }, '← Storyboard')] : []),
-      h('select', { class: 'name', id: 'shot', 'aria-label': 'Shot', onchange: (e: Event) => {
-        const v = (e.target as HTMLSelectElement).value;
-        if (v === '+') { const s = newShot(`Shot ${project.shots.length + 1}`); project.shots.push(s); ctx.onChanged(); ctx.onShot(s.name); } else ctx.onShot(v);
-      } },
-        project.shots.map((s) => h('option', { value: s.name, selected: s === this.shot }, s.name)), h('option', { value: '+' }, 'New shot…')),
-      h('nav', { class: 'steps', 'aria-label': 'Steps' }, STEPS.map(([t, text], i) => {
-        const here = this.tab === t || (t === 'animate' && this.tab === 'capture');
-        return h('button', { class: 'step' + (here ? ' selected' : ''), 'aria-current': here ? 'step' : undefined, 'data-tab': t, onclick: () => { this.tab = t; this.drag = null; this.refresh(); } },
-          h('span', { class: 'n' }, String(i + 1)), text);
-      })),
-      h('span', { class: 'grow' }),
+      h('button', { id: 'to-storyboard', title: 'Back to the storyboard (Ctrl+↑)', onclick: ctx.back }, '← Storyboard'),
+      renderFilmstrip(this),
       h('button', { id: 'undo', title: 'Undo (Ctrl+Z)', disabled: !this.undoStack.length, onclick: this.undo }, 'Undo'),
       h('button', { id: 'redo', title: 'Redo (Ctrl+Shift+Z)', disabled: !this.redoStack.length, onclick: this.redo }, 'Redo'),
+      h('button', { id: 'open-export', class: this.focus === 'export' ? 'selected' : '', onclick: () => { this.select('export'); this.refresh(); } }, 'Export'),
       h('span', { class: 'save-state', id: 'save-state', role: 'status' }, ctx.saveState()),
       h('details', { class: 'menu' },
         h('summary', {}, 'Project'),
         h('div', { class: 'menu-items' },
           h('p', { class: 'meta save-status' }, ctx.status()),
+          h('button', { onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); this.showKeys(true); } }, 'Keyboard shortcuts'),
           ctx.menu().map((m) => h('button', { onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); m.run(); } }, m.label)))),
     );
+    // Keep the current shot in view in the filmstrip.
+    this.toolbar.querySelector<HTMLElement>('.film.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  /** The keyboard shortcut list. */
+  showKeys(show = this.keysHelp.hidden) {
+    const wasHidden = this.keysHelp.hidden;
+    this.keysHelp.hidden = !show;
+    if (!show) return;
+    this.keysHelp.replaceChildren(h('div', { class: 'keys-card' },
+      h('div', { class: 'row' }, h('h2', {}, 'Keyboard shortcuts'), h('button', { id: 'keys-close', onclick: () => this.showKeys(false) }, 'Close')),
+      h('dl', {}, SHORTCUTS.flatMap(([k, what]) => [h('dt', {}, k.split(' / ').map((part, i) => [i ? ' / ' : '', ...part.split(/(\s(?:and)\s|,\s)/).map((x) => (/^\s|,/.test(x) ? x : h('kbd', {}, x)))]).flat()), h('dd', {}, what)]))));
+    if (wasHidden) enter(this.keysHelp.firstElementChild as HTMLElement, 'scale(0.97)', 180, EASE_OUT);
+    (this.keysHelp.querySelector('#keys-close') as HTMLElement).focus();
   }
 
   // --- stage interactions ------------------------------------------------------
@@ -644,6 +667,27 @@ export class Editor {
       bone = j.parent;
     }
     return 'root';
+  }
+
+  /** The topmost thing under a point that can be picked: text first, then the stack from the front. Hidden and locked things are skipped. */
+  private pick(world: Pt): { kind: 'text'; id: string } | { kind: 'actor'; id: string; bone: BoneId } | { kind: 'layer'; id: string } | null {
+    const text = visibleTexts(this.shot, this.frame).filter((t) => t.kind === 'text').reverse()
+      .find((t) => Math.abs(world.y - t.y) < t.size * 0.9 && Math.abs(world.x - t.x) < Math.max(t.size, t.text.length * t.size * 0.35));
+    if (text) return { kind: 'text', id: text.id };
+    const layers = visibleLayers(this.shot, this.frame);
+    for (const id of [...stackOrder(this.shot)].reverse()) {
+      const a = this.shot.actors.find((x) => x.id === id);
+      if (a) {
+        const rig = this.rig(a);
+        if (a.hidden || a.locked || !rig) continue;
+        const hit = this.stage.actor({ id: a.id, rig })?.hit(world);
+        if (hit) return { kind: 'actor', id: a.id, bone: hit.bone };
+        continue;
+      }
+      const l = layers.find((x) => x.id === id);
+      if (l && !l.hidden && !l.locked && this.stage.hitBackground([l], world)) return { kind: 'layer', id: l.id };
+    }
+    return null;
   }
 
   private bindStage() {
@@ -661,7 +705,6 @@ export class Editor {
       });
       return best;
     };
-    const order = () => this.shot.actors.filter((a) => this.rig(a)).map((a) => ({ id: a.id, rig: this.rig(a)! }));
     const cameraCorner = (screen: Pt): Pt | null => {
       const r = cameraRect(this.camera(), this.format());
       const corners = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]];
@@ -671,82 +714,71 @@ export class Editor {
       }
       return null;
     };
-    const textAt = (world: Pt) => visibleTexts(this.shot, this.frame).filter((t) => t.kind === 'text').reverse()
-      .find((t) => Math.abs(world.y - t.y) < t.size * 0.9 && Math.abs(world.x - t.x) < Math.max(t.size, t.text.length * t.size * 0.35));
 
     canvas.addEventListener('pointerdown', (e) => {
       const screen = screenPt(e), world = this.stage.screenToWorld(screen);
       canvas.setPointerCapture(e.pointerId);
+      this.dragMoved = false;
       if (this.playing) this.stop();
       if (e.button === 1 || this.spaceDown) { this.drag = { type: 'pan', last: screen }; return; }
       if (e.button !== 0) return;
       // A plain left-drag never moves the view: that is Space+drag, the middle button or the trackpad.
-      const pan = (): Drag | null => null;
-      const hit = this.stage.hitActor(order(), world);
 
-      if (this.tab === 'scene') {
-        if (this.sceneTool === 'framing') {
-          const anchor = cameraCorner(screen), r = cameraRect(this.camera(), this.format());
-          const inside = world.x >= r.x && world.x <= r.x + r.w && world.y >= r.y && world.y <= r.y + r.h;
-          this.drag = anchor ? { type: 'cameraSize', anchor } : inside ? { type: 'camera', last: world } : pan();
-          if (this.drag && this.formatId !== 'yt') this.camera().custom = true;
-        } else if (this.sceneTool === 'backgrounds') {
-          const id = this.stage.hitBackground(visibleLayers(this.shot, this.frame), world);
-          this.selBg = id;
-          this.drag = id ? { type: 'background', id, last: world } : pan();
-        } else if (hit) { this.selId = hit.id; this.drag = { type: 'place', last: world }; } else this.drag = pan();
-        this.refresh();
-        return;
-      }
-      // A layer picked on the timeline can be dragged on the stage from any step, even when it lies under a character.
-      const picked = this.selBg && visibleLayers(this.shot, this.frame).find((l) => l.id === this.selBg);
-      if (picked && (this.tab === 'animate' || this.tab === 'sound') && this.stage.hitBackground([picked], world) && !(hit && !picked.front)) {
-        this.drag = { type: 'background', id: picked.id, last: world };
-        this.refresh();
-        return;
-      }
-      if (this.tab === 'sound' || (this.tab === 'animate' && this.selText)) {
-        const t = textAt(world);
-        if (!t && this.tab === 'animate') this.selText = null;
-        if (!t && this.tab === 'animate') { /* fall through to posing */ } else {
-        if (t) { this.selText = t.id; this.drag = { type: 'text', id: t.id, last: world }; } else this.drag = pan();
-        this.refresh();
-        return;
+      // The camera, while it is selected: drag inside to move it, a corner to resize it.
+      if (this.focus === 'camera') {
+        const anchor = cameraCorner(screen), r = cameraRect(this.camera(), this.format());
+        const inside = world.x >= r.x && world.x <= r.x + r.w && world.y >= r.y && world.y <= r.y + r.h;
+        if (anchor || inside) {
+          this.drag = anchor ? { type: 'cameraSize', anchor } : { type: 'camera', last: world };
+          if (this.formatId !== 'yt') this.camera().custom = true;
+          this.refresh();
+          return;
         }
       }
 
       const marker = markerAt(screen, 12);
-      if (this.tab === 'rig') {
+      if (this.mode === 'rig') {
+        const hit = this.pick(world);
         if (marker) {
           this.drag = marker;
           this.selJoint = marker.type === 'pivot' ? marker.joint : marker.type === 'rootPivot' ? 'root' : this.selJoint;
-        } else if (hit) {
-          if (hit.id !== this.selId) { this.selId = hit.id; this.selJoint = null; } else this.selJoint = this.bendableJoint(hit.bone);
-        } else { this.selJoint = null; this.drag = pan(); }
+        } else if (hit?.kind === 'actor' && hit.id === this.selId) this.selJoint = this.bendableJoint(hit.bone);
+        else this.selJoint = null;
         this.refresh();
         return;
       }
-      if (this.tab !== 'animate') {
-        if (hit) this.selId = hit.id;
-        this.drag = hit ? null : pan();
-        this.refresh();
-        return;
+      if (this.mode === 'capture') return;
+
+      // Posing handles on the selected character come before anything under them.
+      if (this.mode === 'pose' && marker?.type === 'ik') {
+        const hit = this.pick(world);
+        if (!(e.altKey && hit?.kind === 'actor' && hit.id === this.selId)) {
+          this.drag = marker;
+          this.selJoint = LIMBS.find((l) => l.id === marker.limb)!.lower;
+          this.refresh();
+          return;
+        }
       }
 
-      // Animate: pose the character under the pointer.
-      if (marker?.type === 'ik' && !(e.altKey && hit?.id === this.selId)) {
-        this.drag = marker;
-        this.selJoint = LIMBS.find((l) => l.id === marker.limb)!.lower;
-      } else if (hit) {
-        this.selBg = this.selText = null; // posing a character lets go of any layer
-        if (hit.id !== this.selId) { this.selId = hit.id; this.selJoint = null; }
-        const joint = this.bendableJoint(hit.bone);
-        const limb = LIMBS.find((l) => JOINT_BY_ID[l.end].bone === hit.bone);
-        if (joint === 'root') this.drag = e.shiftKey ? { type: 'rootRotate', last: world } : { type: 'move', last: world };
-        else if (limb && !e.altKey && this.ikLimbs().includes(limb)) this.drag = { type: 'ik', limb: limb.id };
-        else this.drag = { type: 'fk', joint, last: world };
-        this.selJoint = this.drag.type === 'ik' ? limb!.lower : joint;
-      } else { this.selJoint = null; this.drag = pan(); }
+      const hit = this.pick(world);
+      if (!hit) { this.select('shot'); this.selJoint = null; this.refresh(); return; }
+      if (hit.kind === 'text') { this.select('text', hit.id); this.drag = { type: 'text', id: hit.id, last: world }; this.refresh(); return; }
+      if (hit.kind === 'layer') { this.select('layer', hit.id); this.drag = { type: 'background', id: hit.id, last: world }; this.refresh(); return; }
+
+      // A character.
+      if (this.mode === 'place') {
+        if (hit.id !== this.selId) { this.selId = hit.id; this.focus = 'actor'; }
+        this.drag = { type: 'place', last: world };
+        this.refresh();
+        return;
+      }
+      this.select('actor', hit.id);
+      const joint = this.bendableJoint(hit.bone);
+      const limb = LIMBS.find((l) => JOINT_BY_ID[l.end].bone === hit.bone);
+      if (joint === 'root') this.drag = e.shiftKey ? { type: 'rootRotate', last: world } : { type: 'move', last: world };
+      else if (limb && !e.altKey && this.ikLimbs().includes(limb)) this.drag = { type: 'ik', limb: limb.id };
+      else this.drag = { type: 'fk', joint, last: world };
+      this.selJoint = this.drag.type === 'ik' ? limb!.lower : joint;
       this.refresh();
     });
 
@@ -754,9 +786,10 @@ export class Editor {
       const drag = this.drag;
       const screen = screenPt(e), world = this.stage.screenToWorld(screen);
       if (!drag) {
-        canvas.style.cursor = this.spaceDown ? 'grab' : markerAt(screen, 12) || this.stage.hitActor(order(), world) ? 'grab' : 'default';
+        canvas.style.cursor = this.spaceDown ? 'grab' : markerAt(screen, 12) || this.pick(world) ? 'grab' : 'default';
         return;
       }
+      this.dragMoved = true;
       const actor = this.sel(), v = this.view(), pose = this.pose(), rig = this.rig();
       const by = (last: Pt) => ({ x: world.x - last.x, y: world.y - last.y });
       const toRest = () => apply(invert(rootMatrix(v!, this.shownPose(actor!)!)), world);
@@ -845,7 +878,7 @@ export class Editor {
       if (!drag) return;
       this.drag = null;
       if (drag.type === 'pan') return this.redraw();
-      if (['fk', 'ik', 'move', 'rootRotate'].includes(drag.type)) this.edited();
+      if (this.dragMoved && ['fk', 'ik', 'move', 'rootRotate'].includes(drag.type)) this.edited();
       this.refresh();
     };
     canvas.addEventListener('pointerup', endDrag);
@@ -858,8 +891,7 @@ export class Editor {
         // A pinch sends many small steps; a mouse wheel notch sends one big one (about 100 px or 3 lines).
         const k = e.deltaMode ? 0.05 : Math.abs(e.deltaY) >= 50 ? 0.0015 : 0.01;
         this.stage.zoomAt(screenPt(e), Math.exp(-e.deltaY * k));
-      }
-      else {
+      } else {
         const line = e.deltaMode === 1 ? 16 : 1; // some mice report lines, not pixels
         this.stage.panBy(-(e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * line, -(e.shiftKey && !e.deltaX ? 0 : e.deltaY) * line);
       }
@@ -872,33 +904,54 @@ export class Editor {
       if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
         const key = e.key.toLowerCase();
         if (key === 'z' || key === 'y') { e.preventDefault(); if (key === 'y' || e.shiftKey) this.redo(); else this.undo(); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); this.ctx.back(); return; }
       }
-      if (typing || e.ctrlKey || e.metaKey) return;
+      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.code === 'Space') {
         e.preventDefault();
-        if (el.matches('button, input')) el.blur();
+        if (el.matches('button, input, summary')) el.blur();
         // Tap Space to play or stop; hold it and drag to pan.
         if (e.type === 'keydown' && !e.repeat) this.spaceDown = true;
         if (e.type === 'keyup') { this.spaceDown = false; if (!this.drag && !this.spacePanned) this.play(); this.spacePanned = false; }
         return;
       }
       if (e.type !== 'keydown') return;
-      if (e.key.toLowerCase() === 'k') { e.preventDefault(); this.setKeyHere(); }
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      const key = e.key;
+      if (key === '?') { e.preventDefault(); this.showKeys(); return; }
+      if (key === 'Escape') {
+        if (!this.keysHelp.hidden) { this.showKeys(false); return; }
+        if (document.querySelector('details.menu[open]')) return; // the menu closes first
+        if (this.mode !== 'pose') this.setMode('pose');
+        else if (this.focus !== 'shot') { this.select('shot'); this.selJoint = null; this.refresh(); }
+        return;
+      }
+      if (key.toLowerCase() === 'k') { e.preventDefault(); this.setKeyHere(); return; }
+      if (key === ',' || key === '.') { e.preventDefault(); this.setFrame(this.frame + (key === ',' ? -1 : 1)); return; }
+      if (key === '[' || key === ']') { e.preventDefault(); this.stepShot(key === '[' ? -1 : 1); return; }
+      if (key === '\\') { e.preventDefault(); this.timeline.toggleZoom(); return; }
+      if ((key === 'Delete' || key === 'Backspace') && this.focus !== 'shot' && this.focus !== 'export' && this.focus !== 'camera') {
+        e.preventDefault(); this.removeSelected(); return;
+      }
+      if (key === 'ArrowLeft' || key === 'ArrowRight') {
         if (el.matches('[role="slider"], input')) return;
         e.preventDefault();
-        this.setFrame(this.frame + (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 12 : 1));
+        this.setFrame(this.frame + (key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 12 : 1));
       }
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
     canvas.addEventListener('pointerdown', () => { if (this.spaceDown) this.spacePanned = true; });
-    const observer = new ResizeObserver(() => requestAnimationFrame(() => { this.stage.app.resize(); this.redraw(); this.timeline.draw(); }));
+    const observer = new ResizeObserver(() => requestAnimationFrame(() => { if (this.disposed) return; this.stage.app.resize(); this.redraw(); this.timeline.draw(); }));
     observer.observe(this.stageHost);
     this.disposers.push(() => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey); observer.disconnect(); });
   }
-  private spacePanned = false;
 
+  /** The previous or next panel on the storyboard. */
+  stepShot(dir: -1 | 1) {
+    const panels = this.project.storyboard?.panels ?? [], here = this.panel_();
+    const next = here ? panels[panels.indexOf(here) + dir] : undefined;
+    if (next) this.ctx.openPanel(next);
+  }
 
   /** Move a character everywhere at once: its resting pose, every key, and what is on screen. */
   shiftActor(actor: Actor, d: Pt) {

@@ -57,7 +57,7 @@ function buildView(pieces: PieceRaster[], viewId: ViewId, issues: Issue[]): RigV
   if (noOverlap.length) {
     issues.push({
       severity: 'warn',
-      text: `${viewId}: pieces do not overlap at ${noOverlap.join(', ')}. The pivot is a rough guess; drag it into place in the Rig tab.`,
+      text: `${viewId}: pieces do not overlap at ${noOverlap.join(', ')}. The pivot is a rough guess; drag it into place in Edit rig.`,
     });
   }
 

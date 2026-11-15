@@ -1,4 +1,4 @@
-// Capture tab: pose the selected character from a photo, or from the webcam after a countdown.
+// Pose from a photo (a mode of the selected character): pose the selected character from a photo, or from the webcam after a countdown.
 import { h } from '../ui/dom';
 import type { Editor } from '../ui/editor';
 import { CAPTURE_GROUPS, landmarksToPose, type CaptureGroup, type Landmark } from './mapping';
@@ -49,7 +49,7 @@ export function applyCapture(ed: Editor): boolean {
   if (result.rootAngle !== null) pose.rootAngle = result.rootAngle;
   pose.flip = false;
   ed.edited();
-  state.message = result.seen < 4 ? 'Only a few body parts were visible, so most of the pose was left as it was.' : 'Pose applied. Tweak it in the Animate tab.';
+  state.message = result.seen < 4 ? 'Only a few body parts were visible, so most of the pose was left as it was.' : 'Pose applied. Drag any part to adjust it, then press Done.';
   return true;
 }
 

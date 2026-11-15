@@ -4,8 +4,8 @@ A free, self-owned web app for rigging layered characters and animating them: po
 cut-out puppets, a keyframe timeline, sound with lip sync, and video export. Static files only: no accounts, no AI services.
 The only thing that ever goes online is a Google font, and only if you add one.
 
-**Built: phases 1 to 5** of the build plan (rig and pose, library, scenes and timeline, sound and lip sync, camera capture).
-Phase 6 (offline install, shortcuts, export presets) is not started.
+It follows the owner's improvement plan (`docs/improvement-plan.md`): a **storyboard home**, a **shot editor** with a filmstrip and an
+inspector, and **scene-level sound**. Phases 0 to 3 of that plan are built; Phase 4 (whole-scene export, transitions, camera moves) is next.
 
 ## Run it
 
@@ -38,24 +38,39 @@ The first screen offers **New scene** (with a three-panel sample you can remove 
 - The header shows the scene name and total runtime, for example `1:48 · 27 shots`.
 - **← Storyboard** in the editor goes back. A reload reopens the screen you were on.
 
-## The editor
+## The shot editor
 
-The stage has the window. The work follows five steps along the top; each has one main action, placed on the stage.
+Open a panel (double-click, Enter, **Animate**, or a shot in the filmstrip) to animate it.
 
-| Step | Main action | What else is there |
-| --- | --- | --- |
-| **1 Character** | Import a character | Drag pivots on the stage. Under More: rig level, joint limits, draw order. |
-| **2 Scene** | Add a character | Choose what to drag: characters, backgrounds or the framing. Under More: framing numbers, stage size, templates. |
-| **3 Animate** | Set key (on the timeline) | Pose by dragging. View, flip, mouth and hands sit in a small bar on the character. "Pose from a photo" opens capture. |
-| **4 Sound** | Add dialogue | Mouth flaps are made as soon as dialogue is added. Subtitles, on-screen text, music. Under More: font. |
-| **5 Export** | Export video | PNG sequence, single frame, `.srt`. |
+- **Top:** ← Storyboard, the **filmstrip** of every shot (click one to go to it), Undo, Redo, **Export**, the save state, Project.
+- **Stage:** **+ Add** (top left) adds a character (the scene's cast first), a background image, a foreground image or a text.
+  The character you picked has a small bar above it: view, flip, mouth and hands.
+- **Inspector (right):** the **Layers** list, then whatever is selected.
+  - Layers, front at the top: Camera, texts, then every image and character in one stack. **Drag a row** to change what is in front,
+    so an image can sit between two characters. **Hide** and **Lock** are one click each. A background image starts locked, so posing a
+    character never moves it.
+  - A **character**: acting or extra, size, **Move in every frame**, Reset pose, **Pose from a photo**, **Edit rig**, swaps, mouth shapes,
+    the pose library, timing. An **extra** stands still or **loops** through a few poses (no keys needed).
+  - An **image**, a **text**, the **camera** (output shape and framing), a **sound**, or (nothing selected) the **shot**: its storyboard notes,
+    subtitles, font, stage, and reusable setups.
+- Click empty stage or press **Esc** to go back to the shot. Everything is undoable, so nothing asks for confirmation.
 
-- **Add layer** on the timeline adds an image behind or in front of the characters, or a text. Each layer has its own row: drag its bar to move it in time, drag an end to trim it, click the row and drag the layer on the stage to place it.
-- **More options** opens the side panel, which starts closed. Advanced settings inside it are folded until opened.
-- **Timeline options** holds timing, easing, Auto-record poses, onion skin and zoom.
-- The timeline shows only in Animate and Sound.
-- The rig level is worked out from the pieces in the art; the other output shapes follow the 16:9 framing until you frame them yourself.
-- Everything is undoable, including the pose library, so nothing asks for confirmation.
+Press **?** for the shortcut list: Space plays, `,` and `.` step a frame, `[` and `]` go to the previous and next shot, **K** keys,
+`\` switches the timeline between this shot and the whole scene, Delete removes the selected image, text or sound, Ctrl+↑ goes back to the storyboard.
+
+### Sound
+
+Sound belongs to the scene, so it plays straight across the cuts; animation stays inside each shot.
+
+- The timeline has three lanes: **Voice** (with each speaker's mouth row under it), **Sound effect** and **Music**. **+ Add** on a lane puts a
+  file at the playhead. Sound effect also offers a starter set: phone buzz, door knock, door closing, footsteps.
+- **Record** on the Voice lane, or **Record line** on a selected storyboard panel, records a scratch take from the microphone. It starts at the
+  beginning of the shot, replaces that shot's last take, and the shot becomes as long as the take.
+- A sound is pinned to the shot it starts in, so moving, adding or resizing shots keeps every line with its picture. Drag a sound to move it,
+  across cuts too.
+- **Whole scene** (or `\`) shows every shot back to back with the sound; **Play the scene** plays every shot and sketch in turn with the sound.
+- Mouth shapes are set by hand: pick the character, then click a shape in its **Mouth** section. A rough start from a line's loudness is under
+  the voice sound's **Quick mouth flaps**.
 
 ### Keyframes
 
@@ -80,10 +95,11 @@ a 9:16 Reel by moving the frame.
 | Shape | Size |
 | --- | --- |
 | YouTube 16:9 | 1920 × 1080 |
-| YouTube 4:3 | 1440 × 1080 |
 | YouTube Shorts 9:16 | 1080 × 1920 |
 | Instagram Reels 9:16 | 1080 × 1920 |
-| Instagram post 4:5 / 3:4 | 1080 × 1350 / 1080 × 1440 |
+| Instagram post 4:5 | 1080 × 1350 |
+
+Choose the shape and frame it by selecting **Camera** in the layer list. 4:3 and 3:4 are cut in the plan; old shots keep their framings.
 
 The inner guide line marks the area platform buttons usually leave clear. It is approximate.
 
@@ -112,23 +128,22 @@ and exports or opens a zip. All of it is plain files:
 | `characters/<name>/source/` | The original art files, untouched |
 | `characters/<name>/rig.json` | Rig level, pivots, limits, draw order |
 | `poses/<name>.json` and `.png` | A saved pose and its thumbnail |
-| `controls/<name>_<id>.json` | A controller pad and the poses in its slots |
-| `scenes/<name>.json` | A scene template |
-| `shots/<name>.json` | A scene plus its keyframes, mouth keys, layers, sound clips and text |
-| `storyboard.json` | The scene's panels: notes, durations, which sketch and which shot |
+| `scenes/<name>.json` | A reusable setup: stage, images, characters, framing |
+| `shots/<name>.json` | One shot: characters, keys, mouth keys, image layers, stack order, cameras, text |
+| `storyboard.json` | The scene's panels (notes, durations, sketch, shot) and its sound clips |
 | `sketches/` | The panels' sketch images |
-| `backgrounds/`, `audio/`, `fonts/` | The files shots use |
+| `backgrounds/`, `audio/`, `fonts/` | The files shots and sound use (scratch takes and starter effects go in `audio/`) |
 
 ## Code layout
 
 | Path | Holds |
 | --- | --- |
-| `src/model/` | Skeleton and names, rig and pose types, FK, IK, swaps, controller pads, shots and timeline (no DOM) |
+| `src/model/` | Skeleton and names, rig and pose types, FK, IK, swaps, shots, the layer stack, the storyboard and scene sound (no DOM) |
 | `src/import/` | SVG and PSD importers, line/fill splitting, pivot guessing, check report |
 | `src/render/stage.ts` | The one PixiJS renderer, for the editor and for export |
-| `src/audio/`, `src/export/` | Playback, loudness and mixdown; MP4 and PNG export |
+| `src/audio/`, `src/export/` | Playback, loudness, mixdown, recording, starter effects; MP4 and PNG export |
 | `src/capture/` | Body tracking (MediaPipe, runs locally) and turning body points into joint angles |
-| `src/ui/` | Importer, editor, panels, timeline, controller pads |
+| `src/ui/` | Start screen, storyboard, importer, editor, inspector, filmstrip, timeline, scene player |
 | `src/project/` | Project file format and storage (browser, folder, zip) |
 | `public/placeholder/` | Placeholder character at all three levels, as PSDs and as part files |
 | `public/models/`, `public/mediapipe/` | The tracking model and its engine |
@@ -137,9 +152,8 @@ and exports or opens a zip. All of it is plain files:
 
 - Exports from Illustrator, Figma, Affinity, Penpot and Procreate are untested with real files; the name
   clean-up rules follow each app's documented behaviour. Penpot's naming step is not built.
-- Controllers blend joint angles only; they do not switch swaps.
 - Capture works from the front view. Feet are left as posed.
-- Layers cannot be keyframed or resized on the stage yet; size and opacity are numbers in the Scene step.
-- Phase 6 is not started: no offline install, no export presets.
+- Layers cannot be keyframed or resized on the stage yet; size and opacity are numbers in the inspector.
+- Export is one shot at a time; exporting the whole scene is Phase 4. Mouths are manual; automatic mouths are for later.
 
 `PLAN.md` has the full status, decisions and next steps for whoever continues the work.

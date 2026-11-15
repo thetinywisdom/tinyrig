@@ -1,6 +1,6 @@
 import './style.css';
 import { FPS, newShot } from './model/shot';
-import { freeShotName, linkShots, newPanel, newStoryboard, type Panel } from './model/storyboard';
+import { dropOrphanClips, freeShotName, linkShots, moveShotSoundToScene, newPanel, newStoryboard, panelStarts, type Panel } from './model/storyboard';
 import { emptyProject, filesToProject, projectToFiles, slug, type InFile, type Project } from './project/project';
 import {
   canUseFolders, fromZip, loadFromBrowser, pickFolder, readFolder, saveToBrowser, toZip, writeFolder,
@@ -11,6 +11,7 @@ import { Editor } from './ui/editor';
 import { installPopovers } from './ui/motion';
 import { mountImporter, type Imported, type ImportMode } from './ui/importer';
 import { addSample } from './ui/sample';
+import { playScene } from './ui/player';
 import { mountStart } from './ui/start';
 import { StoryboardView } from './ui/storyboard';
 
@@ -55,7 +56,6 @@ function save() {
 }
 
 function closeViews() {
-  if (editor) shotName = editor.shot.name;
   editor?.dispose();
   editor = null;
   board?.dispose();
@@ -63,10 +63,12 @@ function closeViews() {
   if (import.meta.env.DEV) Object.assign(window, { __rig: null, __sb: null });
 }
 
-/** Every project has a storyboard; a project made before it existed gets one panel per shot. */
+/** Every project has a storyboard; a project made before it existed gets one panel per shot, and its sound moves onto the scene. */
 function ensureStoryboard() {
   if (!project.storyboard) project.storyboard = newStoryboard();
   linkShots(project.storyboard, project.shots, uid);
+  moveShotSoundToScene(project.storyboard, project.shots, uid);
+  dropOrphanClips(project.storyboard);
 }
 
 function showStoryboard() {
@@ -111,7 +113,7 @@ async function newScene() {
 }
 
 /** Open a panel's shot, making one when the panel has none yet. */
-function openPanel(panel: Panel, addCharacterNamed?: string) {
+function openPanel(panel: Panel, addCharacterNamed?: string, frame?: number) {
   const sb = project.storyboard!;
   let shot = panel.shot ? project.shots.find((s) => s.name === panel.shot) : undefined;
   if (!shot) {
@@ -123,12 +125,22 @@ function openPanel(panel: Panel, addCharacterNamed?: string) {
   }
   shotName = shot.name;
   const onStage = shot.actors.some((a) => a.character === addCharacterNamed);
-  openEditor(onStage ? undefined : addCharacterNamed);
+  openEditor(onStage ? undefined : addCharacterNamed, frame);
+}
+
+/** Play the whole scene from a scene frame; afterwards the editor shows the shot where it stopped. */
+function playWholeScene(from: number) {
+  void playScene(project, from, ({ lastFrame }) => {
+    if (!editor || !project.storyboard) return;
+    const starts = panelStarts(project.storyboard, project.shots);
+    const panel = [...project.storyboard.panels].reverse().find((p) => (starts.get(p.id) ?? 0) <= lastFrame);
+    if (panel?.shot && panel.shot !== editor.shot.name) openPanel(panel, undefined, lastFrame - (starts.get(panel.id) ?? 0));
+  });
 }
 
 function showImporter() {
   const back = editor ? () => openEditor() : () => showStoryboard();
-  if (editor) importInto = { to: 'editor' };
+  if (editor) { importInto = { to: 'editor' }; shotName = editor.shot.name; }
   closeViews();
   mountImporter(app, addCharacter, back);
 }
@@ -206,12 +218,21 @@ const menu = () => [
   { label: 'Open a scene zip…', run: pickZip },
 ];
 
-async function openEditor(addCharacterNamed?: string) {
+async function openEditor(addCharacterNamed?: string, frame?: number) {
   closeViews();
+  if (!project.shots.some((s) => s.name === shotName)) {
+    // Nothing to open yet: a first shot on its own panel.
+    ensureStoryboard();
+    const panel = newPanel(uid());
+    project.storyboard!.panels.push(panel);
+    openPanel(panel, addCharacterNamed, frame);
+    return;
+  }
   editor = await Editor.mount(app, {
-    project, shotName, addCharacter: addCharacterNamed,
+    project, shotName, addCharacter: addCharacterNamed, frame,
     onChanged: save,
-    onShot: (name) => { closeViews(); shotName = name; openEditor(); },
+    openPanel: (panel, f) => openPanel(panel, undefined, f),
+    playScene: playWholeScene,
     back: () => showStoryboard(),
     importCharacter: showImporter, download, menu,
     saveState, status,

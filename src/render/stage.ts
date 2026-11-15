@@ -88,8 +88,10 @@ export interface SceneFrame {
   shot: Shot;
   actors: DrawActor[];
   texts: TextItem[];
-  /** Image layers showing at this frame, back to front. */
+  /** Image layers showing at this frame. */
   layers: Background[];
+  /** Back-to-front order of image layers and characters, by id (see stackOrder). Without it: images, characters, front images. */
+  order?: string[];
   /** Translucent copies of one character in other poses. */
   ghosts?: { actor: DrawActor; poses: Pose[] };
 }
@@ -100,10 +102,9 @@ export class StageView {
   private picture = new Container();
   private world = new Container();
   private paper = new Graphics();
-  private backLayer = new Container();
-  private actorLayer = new Container();
+  /** Images and characters in one back-to-front stack, so a layer can sit between two characters. */
+  private stackLayer = new Container();
   private ghostLayer = new Container();
-  private frontLayer = new Container();
   private textLayer = new Container();
   /** Subtitles, laid out in output pixels of the current format. */
   private frameLayer = new Container();
@@ -124,7 +125,7 @@ export class StageView {
       resolution: window.devicePixelRatio || 1, autoDensity: true,
     });
     host.appendChild(this.app.canvas);
-    this.world.addChild(this.paper, this.backLayer, this.ghostLayer, this.actorLayer, this.frontLayer, this.textLayer);
+    this.world.addChild(this.paper, this.stackLayer, this.textLayer);
     this.picture.addChild(this.world, this.frameLayer);
     this.app.stage.addChild(this.picture, this.overlay);
   }
@@ -193,9 +194,9 @@ export class StageView {
     const { shot } = frame;
     this.paper.clear().rect(0, 0, shot.stage.w, shot.stage.h).fill({ color: shot.stage.color });
 
-    // Backgrounds, behind or in front of the characters.
-    this.backLayer.removeChildren();
-    this.frontLayer.removeChildren();
+    // Images and characters, in stack order.
+    this.stackLayer.removeChildren();
+    const items = new Map<string, Container>();
     for (const bg of frame.layers) {
       const t = this.bgTextures.get(bg.file);
       if (!t) continue;
@@ -205,18 +206,26 @@ export class StageView {
       s.position.set(bg.x, bg.y);
       s.scale.set(bg.scale);
       s.alpha = bg.opacity ?? 1;
-      (bg.front ? this.frontLayer : this.backLayer).addChild(s);
+      items.set(bg.id, s);
     }
 
     // Characters. Extras hold one pose, so they are flattened to a cached image and only redrawn when it changes.
-    this.actorLayer.removeChildren();
     for (const a of frame.actors) {
       const view = this.actorView(a);
       if (!view) continue;
       const changed = view.draw(a.rig, a.pose, a.unlocked);
       if (a.extra) { if (!view.container.isCachedAsTexture) view.container.cacheAsTexture(true); else if (changed) view.container.updateCacheTexture(); }
       else if (view.container.isCachedAsTexture) view.container.cacheAsTexture(false);
-      this.actorLayer.addChild(view.container);
+      items.set(a.id, view.container);
+    }
+    const order = frame.order ?? [
+      ...frame.layers.filter((l) => !l.front).map((l) => l.id), ...frame.actors.map((a) => a.id), ...frame.layers.filter((l) => l.front).map((l) => l.id),
+    ];
+    for (const id of order) {
+      const item = items.get(id);
+      if (!item) continue;
+      if (frame.ghosts && id === frame.ghosts.actor.id) this.stackLayer.addChild(this.ghostLayer); // onion skin just behind its character
+      this.stackLayer.addChild(item);
     }
 
     this.ghostLayer.removeChildren();
@@ -272,6 +281,8 @@ export class StageView {
   }
 
   /** Editor-only drawing: joint handles, the camera frame and its safe area, the stage edge. */
+  /** No editor drawing at all: for playing back a finished picture. */
+  clearOverlay() { this.overlay.clear(); }
   drawOverlay(markers: Marker[], guide: { format: FormatDef; camera: Camera; active: boolean } | null, stage: { w: number; h: number }, selection: Rect | null) {
     const g = this.overlay.clear();
     const a = this.worldToScreen({ x: 0, y: 0 }), b = this.worldToScreen({ x: stage.w, y: stage.h });

@@ -266,7 +266,7 @@ export async function importSvgParts(
   if (dupes.length) issues.push({ severity: 'warn', text: `Same piece twice, first one used: ${dupes.join(', ')}` });
   if (noStroke.length) issues.push({ severity: 'warn', text: `No live strokes, outlines may be expanded: ${noStroke.join(', ')}. Joints only stay seamless with live strokes.` });
   if (masked.length) issues.push({ severity: 'warn', text: `Uses masks: ${masked.join(', ')}. In Figma this means an inside or outside stroke; set every stroke to Center.` });
-  issues.push({ severity: 'info', text: 'Separate files carry no layer order, so a standard order was used. Change it under Default draw order in the Rig tab.' });
+  issues.push({ severity: 'info', text: 'Separate files carry no layer order, so a standard order was used. Change it under Draw order in Edit rig.' });
 
   return { name: charName ?? 'character', source: 'svg', fileNames: files.map((f) => f.name), views, issues, otherCharacters: [] };
 }

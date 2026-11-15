@@ -1,6 +1,6 @@
 // Sound with the Web Audio API: playback in step with the timeline, a loudness
 // curve per frame (for waveforms and mouth flaps), and a mixed-down track for export.
-import { FPS, type AudioClip, type Shot } from '../model/shot';
+import { FPS, type AudioClip } from '../model/shot';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -57,20 +57,20 @@ export class AudioEngine {
     return src;
   }
 
-  /** Play every clip from a frame. */
-  play(shot: Shot, frame: number) {
+  /** Play every clip from a frame. Starts are in the same frames as `frame`; a clip may start before 0. */
+  play(clips: AudioClip[], frame: number) {
     this.stop();
     const ctx = this.context();
-    for (const clip of shot.audio) {
+    for (const clip of clips) {
       const src = this.start(ctx, clip, frame, ctx.currentTime);
       if (src) this.playing.push(src);
     }
   }
   /** A short blip of sound at a frame, heard while scrubbing. */
-  scrub(shot: Shot, frame: number) {
+  scrub(clips: AudioClip[], frame: number) {
     this.stop();
     const ctx = this.context();
-    for (const clip of shot.audio) {
+    for (const clip of clips) {
       if (frame < clip.start) continue;
       const src = this.start(ctx, clip, frame, ctx.currentTime, 2 / FPS);
       if (src) this.playing.push(src);
@@ -81,11 +81,14 @@ export class AudioEngine {
     this.playing = [];
   }
 
-  /** All clips mixed into one stereo track the length of the shot, or null if the shot is silent. */
-  async mixdown(shot: Shot, sampleRate = 48000): Promise<AudioBuffer | null> {
-    if (!shot.audio.some((c) => this.buffers.has(c.file))) return null;
-    const off = new OfflineAudioContext(2, Math.ceil((shot.length / FPS) * sampleRate), sampleRate);
-    for (const clip of shot.audio) this.start(off, clip, 0, 0);
+  /** Seconds since an arbitrary start, on the clock the sound plays by. */
+  now() { return this.context().currentTime; }
+
+  /** All clips mixed into one stereo track `frames` long, or null if nothing is heard. Clips may start before 0. */
+  async mixdown(clips: AudioClip[], frames: number, sampleRate = 48000): Promise<AudioBuffer | null> {
+    if (!clips.some((c) => this.buffers.has(c.file))) return null;
+    const off = new OfflineAudioContext(2, Math.ceil((frames / FPS) * sampleRate), sampleRate);
+    for (const clip of clips) this.start(off, clip, 0, 0);
     return off.startRendering();
   }
 }

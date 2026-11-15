@@ -3,7 +3,7 @@
 import { buildRig, levelIssues } from '../import/build';
 import { importPsd } from '../import/psd';
 import { importSvg, importSvgParts } from '../import/svg';
-import { parsePartFileName, SIDES, type RigLevel } from '../model/skeleton';
+import { parsePartFileName, type RigLevel } from '../model/skeleton';
 import type { ImportResult, Issue, Rig } from '../model/types';
 import { h } from './dom';
 
@@ -17,13 +17,11 @@ const LEVEL_CARDS: Record<RigLevel, { title: string; bends: string }> = {
   high: { title: 'High', bends: 'Bends at every joint, including waist, wrists and ankles' },
 };
 
-const PART_NAMES = ['hair_back', 'head', 'chest', 'pelvis', ...['rest', 'mbp', 'a', 'e', 'o', 'u', 'fv', 'l'].map((m) => `mouth_${m}`), ...SIDES.flatMap((s) => ['upperarm', 'forearm', 'hand', 'thigh', 'shin', 'foot'].map((n) => `${n}_${s}`))];
 const PLACEHOLDERS: { label: string; mode: ImportMode; files: string[] }[] = [
   { label: 'High', mode: 'whole', files: ['char_placeholder_high.svg'] },
   { label: 'Medium', mode: 'whole', files: ['char_placeholder_medium.svg'] },
   { label: 'Low', mode: 'whole', files: ['char_placeholder_low.svg'] },
   { label: 'PSD (Procreate style)', mode: 'whole', files: ['char_placeholder_front.psd', 'char_placeholder_side.psd'] },
-  { label: 'Part files', mode: 'parts', files: [...PART_NAMES.map((n) => `parts/${n}.svg`), ...PART_NAMES.map((n) => `parts/side_${n}.svg`)] },
 ];
 
 /** Dropped files: several SVGs, or one SVG named after a piece, are part files. */
@@ -47,7 +45,7 @@ export async function readFiles(
   else if (svgs.length) {
     imp = await importSvg(text(svgs[0]), svgs[0].name, wanted, onProgress);
     if (svgs.length > 1) {
-      imp.issues.push({ severity: 'warn', text: `Only ${svgs[0].name} was read. To import one file per piece, use Part by part.` });
+      imp.issues.push({ severity: 'warn', text: `Only ${svgs[0].name} was read. Put every piece in one SVG as named layers.` });
     }
   } else throw new Error('Choose an SVG file, or the PSD files of one character.');
   const { rig, issues } = buildRig(imp);
@@ -116,7 +114,7 @@ export function mountImporter(
     });
     return input;
   };
-  const wholeInput = picker('whole', '.svg,.psd'), partsInput = picker('parts', '.svg');
+  const wholeInput = picker('whole', '.svg,.psd');
 
   async function run(next: InFile[], nextMode: ImportMode, wanted?: string) {
     files = next;
@@ -152,7 +150,7 @@ export function mountImporter(
         ? h('p', { class: 'meta' }, 'Also in this file: ',
             imp.otherCharacters.map((n) => h('button', { class: 'link', onclick: () => run(files, mode, n) }, n)))
         : null,
-      h('p', { class: 'level' }, h('strong', {}, `${level.title} rig. `), `${level.bends}. Worked out from the pieces found; you can change it later in the Character step.`),
+      h('p', { class: 'level' }, h('strong', {}, `${level.title} rig. `), `${level.bends}. Worked out from the pieces found.`),
       h('h3', {}, 'Check report'),
       issueList([...levelIssues(rig, rig.level), ...issues]),
       h('button', { class: 'primary', id: 'open-editor', onclick: () => onDone(current!, files, mode) }, 'Open in editor'),
@@ -187,21 +185,16 @@ export function mountImporter(
       if (dropped.length) run(dropped, guessMode(dropped));
     },
   },
-    h('div', { class: 'modes' },
-      h('div', { class: 'mode' },
-        h('h3', {}, 'Whole character'),
-        h('p', {}, 'One SVG that holds every piece as a named layer. From Procreate: one PSD per view.'),
-        h('button', { class: 'primary', id: 'choose-whole', onclick: () => wholeInput.click() }, 'Choose file…')),
-      h('div', { class: 'mode' },
-        h('h3', {}, 'Part by part'),
-        h('p', {}, 'One SVG per piece, each file named after its piece: head.svg, forearm_L.svg. Select them all at once.'),
-        h('button', { class: 'primary', id: 'choose-parts', onclick: () => partsInput.click() }, 'Choose part files…'),
-        h('p', { class: 'meta' }, 'Export every part with the whole artboard, so each piece keeps its position.'))),
+    // Part-by-part import is cut in the owner's plan: one SVG, or one PSD per view. (Projects imported part by part still open.)
+    h('div', { class: 'mode single' },
+      h('h3', {}, 'Your character'),
+      h('p', {}, 'One SVG that holds every piece as a named layer. From Procreate: one PSD per view.'),
+      h('button', { class: 'primary', id: 'choose-whole', onclick: () => wholeInput.click() }, 'Choose file…')),
     h('p', { class: 'meta' }, 'Or drop files anywhere in this box. No art yet? Open the placeholder character: ',
       PLACEHOLDERS.map((p) => h('button', { class: 'link', 'data-placeholder': p.label, onclick: () => loadPlaceholder(p) }, p.label))),
   );
 
   host.replaceChildren(h('main', { class: 'importer' },
     onCancel ? h('button', { class: 'link', id: 'back', onclick: onCancel }, '← Back to the editor') : null,
-    h('h1', {}, 'Import a character'), drop, wholeInput, partsInput, status, review, naming));
+    h('h1', {}, 'Import a character'), drop, wholeInput, status, review, naming));
 }
