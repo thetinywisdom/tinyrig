@@ -282,9 +282,13 @@ export class Timeline {
             const bar = Math.max(1, (vol[i] / peak) * (row.h - 14));
             g.fillRect(x0 + i * ppf + 0.5, mid + 2 - bar / 2, Math.max(1, ppf * step - 1), bar);
           }
+          // The name sits on a small tab of its own, so the waveform never hides it.
+          const label = `${fileLabel(clip.file)}${clip.speaker ? ` · ${clip.speaker}` : ''}`;
           g.save(); g.beginPath(); g.rect(x0, y, wide - 2, row.h); g.clip();
-          g.fillStyle = on ? accent : muted; g.font = '600 10px system-ui, sans-serif';
-          g.fillText(`${fileLabel(clip.file)}${clip.speaker ? ` · ${clip.speaker}` : ''}`, x0 + 5, y + 9); g.restore();
+          g.font = '600 10px system-ui, sans-serif';
+          g.fillStyle = surface; g.fillRect(x0 + 1, y + 3, g.measureText(label).width + 8, 12);
+          g.fillStyle = on ? accent : ink;
+          g.fillText(label, x0 + 5, y + 9); g.restore();
           g.font = '11px system-ui, sans-serif';
         }
         // Cuts between shots, so it is clear a sound plays across them.

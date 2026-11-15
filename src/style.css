@@ -389,6 +389,7 @@ kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; backg
 .player-sketch { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fbfaf7; }
 .player-bar { display: flex; align-items: center; gap: 14px; color: #e8eaf0; width: min(100%, 1200px); padding: 0 16px; }
 .player-time { font-variant-numeric: tabular-nums; }
+.player-bar button { color: var(--ink); }
 .player-status { margin: 0; color: #a2a9b8; }
 .mode.single { max-width: 520px; margin: 0 auto 16px; text-align: left; }
 /* Inspector fields: label above the box, so two fit side by side in 280px. */

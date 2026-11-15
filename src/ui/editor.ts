@@ -74,18 +74,19 @@ const HINTS: Record<Mode | 'camera', string> = {
   capture: 'Load a photo of a pose, or use the webcam, to pose the selected character.',
   camera: 'Drag inside the frame to move it, or a corner to resize it. Each output shape keeps its own framing.',
 };
-const SHORTCUTS: [string, string][] = [
-  ['Space', 'Play or stop. Hold and drag to move the view.'],
-  [', and .', 'One frame back or forward (arrow keys too; Shift for 12)'],
-  ['[ and ]', 'Previous or next shot'],
-  ['K', 'Key the pose on this frame'],
-  ['\\', 'Timeline: this shot, or the whole scene'],
-  ['Delete', 'Remove the selected image, text or sound'],
-  ['Esc', 'Finish rig or placing; then clear the selection'],
-  ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo'],
-  ['Ctrl+↑', 'Back to the storyboard'],
-  ['Pinch, Ctrl+wheel', 'Zoom the stage. Two fingers or the wheel move it.'],
-  ['?', 'This list'],
+/** Keys (shown as key caps, joined by "or"/"and") and what they do. */
+const SHORTCUTS: [string[], string, string][] = [
+  [['Space'], '', 'Play or stop. Hold and drag to move the view.'],
+  [[',', '.'], 'and', 'One frame back or forward (arrow keys too; Shift for 12)'],
+  [['[', ']'], 'and', 'Previous or next shot'],
+  [['K'], '', 'Key the pose on this frame'],
+  [['\\'], '', 'Timeline: this shot, or the whole scene'],
+  [['Delete'], '', 'Remove the selected image, text or sound'],
+  [['Esc'], '', 'Finish rig or placing; then clear the selection'],
+  [['Ctrl+Z', 'Ctrl+Shift+Z'], 'and', 'Undo and redo'],
+  [['Ctrl+↑'], '', 'Back to the storyboard'],
+  [['Pinch', 'Ctrl+wheel'], 'or', 'Zoom the stage. Two fingers or the wheel move it.'],
+  [['?'], '', 'This list'],
 ];
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -652,7 +653,7 @@ export class Editor {
     if (!show) return;
     this.keysHelp.replaceChildren(h('div', { class: 'keys-card' },
       h('div', { class: 'row' }, h('h2', {}, 'Keyboard shortcuts'), h('button', { id: 'keys-close', onclick: () => this.showKeys(false) }, 'Close')),
-      h('dl', {}, SHORTCUTS.flatMap(([k, what]) => [h('dt', {}, k.split(' / ').map((part, i) => [i ? ' / ' : '', ...part.split(/(\s(?:and)\s|,\s)/).map((x) => (/^\s|,/.test(x) ? x : h('kbd', {}, x)))]).flat()), h('dd', {}, what)]))));
+      h('dl', {}, SHORTCUTS.flatMap(([keys, join, what]) => [h('dt', {}, keys.flatMap((k, i) => [i ? ` ${join} ` : '', h('kbd', {}, k)])), h('dd', {}, what)]))));
     if (wasHidden) enter(this.keysHelp.firstElementChild as HTMLElement, 'scale(0.97)', 180, EASE_OUT);
     (this.keysHelp.querySelector('#keys-close') as HTMLElement).focus();
   }
