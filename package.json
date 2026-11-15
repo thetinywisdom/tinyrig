@@ -1,0 +1,27 @@
+{
+  "name": "rig-animation-tool",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "placeholder": "node scripts/make-placeholder.mjs",
+    "postinstall": "node scripts/setup-tracker.mjs",
+    "check": "node scripts/check.mjs check-output"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
+    "ag-psd": "^34.2.0",
+    "fflate": "^0.8.3",
+    "mp4-muxer": "^5.2.2",
+    "pixi.js": "^8.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}
