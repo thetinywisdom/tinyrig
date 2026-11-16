@@ -486,3 +486,39 @@ button.big { padding: 12px 20px; font-size: 15px; }
 .chars-below { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .chars-below .hint { background: none; border: 0; padding: 0; }
 .seg-label { padding: 0 8px 0 2px; align-self: center; font-size: 13px; }
+
+/* Characters: the rig panel and the node marks over the drawing */
+.chars-rig { width: 280px; flex: none; background: var(--surface); border-left: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+.chars-rig section { display: flex; flex-direction: column; gap: 8px; }
+.chars-rig h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.chars-rig .small { font-size: 12px; margin: 0; line-height: 1.4; }
+.chars-kind { display: flex; }
+.chars-rig section > .chars-kind + .chars-kind { margin-top: -2px; }
+.chars-kind button { flex: 1; }
+.chars-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chars-head button { padding: 4px 10px; font-size: 13px; }
+.chars-head button.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chars-nodes, .chars-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.chars-nodes li { display: grid; grid-template-columns: minmax(0, 1fr) auto 24px; align-items: center; gap: 6px; padding: 3px 4px 3px 6px; border-radius: 8px; cursor: pointer; }
+.chars-nodes li:hover { background: var(--bg); }
+.chars-nodes li.sel { background: var(--accent-soft); }
+.chars-nodes li.unplaced input { color: var(--muted); font-style: italic; }
+.chars-nodes li .muted { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.chars-nodes input { min-width: 0; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 14px; }
+.chars-nodes input:hover { border-color: var(--line); }
+.chars-nodes input:focus { border-color: var(--accent); background: #fff; outline: none; }
+.chars-nodes .icon { width: 24px; height: 24px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; border-radius: 6px; }
+.chars-nodes .icon:hover { background: var(--line); color: var(--ink); }
+.chars-layers button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; border-color: transparent; background: none; padding: 5px 8px; font-size: 14px; }
+.chars-layers button:hover { background: var(--bg); }
+.chars-layers button.sel { background: var(--accent-soft); border-color: var(--accent); }
+.chars-layers b { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chars-layers .muted { font-size: 12px; white-space: nowrap; }
+.chars-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.chars-marks .bone { stroke: var(--ink); stroke-opacity: 0.45; stroke-width: 2; }
+.chars-marks .link { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 5 4; }
+.chars-marks .dot { fill: #fff; stroke: var(--ink); stroke-width: 2; }
+.chars-marks .dot.sel, .chars-marks .dot.over { stroke: var(--accent); }
+.chars-marks .dot.over { fill: var(--accent-soft); }
+.chars-marks .label { font: 600 11px/1 system-ui, sans-serif; fill: var(--ink); paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+.chars-marks .label.sel { fill: var(--accent); font-size: 12px; }

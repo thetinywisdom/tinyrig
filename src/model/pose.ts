@@ -1,5 +1,6 @@
 // Pure pose maths: bone matrices (FK) and the 2-bone IK solver. No DOM, no Pixi.
-import { JOINTS, JOINT_BY_ID, OVERLAY_SLOTS, ROOT_BONE, type BoneId, type JointId, type LimbDef } from './skeleton';
+import { OVERLAY_SLOTS, type BoneId, type JointId, type LimbDef } from './skeleton';
+import { skeletonOf, type Skeleton } from './rig';
 import type { Pose, Pt, Rig, RigView } from './types';
 
 /** 2D affine: x' = a·x + c·y + e, y' = b·x + d·y + f */
@@ -61,9 +62,9 @@ export function rootMatrix(view: RigView, pose: Pose): Mat {
 }
 
 /** World matrix per bone. Rest-pose stage coordinates go in, world coordinates come out. */
-export function boneMatrices(view: RigView, pose: Pose, unlocked: Set<JointId>): Record<BoneId, Mat> {
-  const out: Record<BoneId, Mat> = { [ROOT_BONE]: rootMatrix(view, pose) };
-  for (const j of JOINTS) {
+export function boneMatrices(view: RigView, pose: Pose, unlocked: Set<JointId>, skel: Skeleton = skeletonOf({})): Record<BoneId, Mat> {
+  const out: Record<BoneId, Mat> = { [skel.root]: rootMatrix(view, pose) };
+  for (const j of skel.joints) {
     const parent = out[j.parent];
     const pivot = view.pivots[j.id];
     const angle = pivot && unlocked.has(j.id) ? pose.angles[j.id] ?? 0 : 0;
@@ -91,8 +92,11 @@ export function solveLimbIK(
   const s = view.pivots[limb.upper], k = view.pivots[limb.lower], e = view.tips[limb.id];
   if (!s || !k || !e || !canBend(view, unlocked, limb.upper) || !canBend(view, unlocked, limb.lower)) return null;
 
-  const mats = boneMatrices(view, pose, unlocked);
-  const t = apply(invert(mats[JOINT_BY_ID[limb.upper].parent]), target);
+  const skel = skeletonOf(rig);
+  const upper = skel.joints.find((j) => j.id === limb.upper);
+  if (!upper) return null;
+  const mats = boneMatrices(view, pose, unlocked, skel);
+  const t = apply(invert(mats[upper.parent]), target);
   const l1 = dist(s, k), l2 = dist(k, e);
   if (l1 < 1e-6 || l2 < 1e-6) return null;
 

@@ -1,7 +1,8 @@
 // From a photo's body points to a character's pose: the angle is read from the photo (3/4, side, back),
 // the drawing is flipped to look the same way, then each part turns to match. Pure: no DOM.
 import type { ActedPose } from '../model/act';
-import { unlockedJoints, VIEWS, type ViewId } from '../model/skeleton';
+import { VIEWS, type ViewId } from '../model/skeleton';
+import { unlockedOf } from '../model/rig';
 import type { Rig } from '../model/types';
 import { flipFor, nearestView, readFacing } from './facing';
 import { landmarksToPose, type Landmark } from './mapping';
@@ -34,7 +35,7 @@ export function poseFromPoints(allPoints: Landmark[], rig: Rig, opts: ActOptions
   const mirror = !!opts.mirror !== flip;
   // Parts the photo cannot see keep the pose they had, even when the angle changes: angles fit any drawing.
   const current = opts.current?.angles ?? {};
-  const result = landmarksToPose(points, drawing, unlockedJoints(rig.level), current, { mirror, rootAngle: opts.current?.rootAngle ?? 0 });
+  const result = landmarksToPose(points, drawing, unlockedOf(rig), current, { mirror, rootAngle: opts.current?.rootAngle ?? 0 });
   const angles = { ...current, ...result.angles };
   // A misread photo must not fold the character in half: the neck and waist bend at most this far
   // unless the rig sets its own limits. The dots stay where the tracker put them, so you can see and fix them.

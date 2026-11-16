@@ -6,15 +6,16 @@ import { importSvg, importSvgParts } from '../import/svg';
 import { parsePartFileName, type RigLevel } from '../model/skeleton';
 import type { ImportResult, Issue, Rig } from '../model/types';
 import { h } from './dom';
+import { RIG_KIND_LABEL } from '../model/rig';
 
 export interface Imported { imp: ImportResult; rig: Rig; issues: Issue[] }
 export type ImportMode = 'whole' | 'parts';
 type InFile = { name: string; data: ArrayBuffer };
 
 const LEVEL_CARDS: Record<RigLevel, { title: string; bends: string }> = {
-  low: { title: 'Low', bends: 'Bends at the neck, shoulders and hips' },
+  low: { title: 'Simple', bends: 'Bends at the neck, shoulders and hips' },
   medium: { title: 'Medium', bends: 'Bends at the neck, shoulders, elbows, hips and knees' },
-  high: { title: 'High', bends: 'Bends at every joint, including waist, wrists and ankles' },
+  high: { title: 'Complex', bends: 'Bends at every joint, including waist, wrists and ankles' },
 };
 
 const PLACEHOLDERS: { label: string; mode: ImportMode; files: string[] }[] = [
@@ -140,7 +141,8 @@ export function mountImporter(
     const views = Object.entries(imp.views).map(([v, p]) => `${v} (${p!.length} pieces)`).join(', ');
     const fileText = imp.fileNames.length > 3 ? `${imp.fileNames.length} files` : imp.fileNames.join(', ');
     const level = LEVEL_CARDS[rig.level];
-    const found = [...levelIssues(rig, rig.level), ...issues];
+    // A rig of its own (a creature) has no human parts to check for.
+    const found = [...(rig.nodes ? [] : levelIssues(rig, rig.level)), ...issues];
     showNaming(found.some((i) => i.severity === 'error' || i.severity === 'warn'));
 
     review.replaceChildren(...[
@@ -150,9 +152,11 @@ export function mountImporter(
         ? h('p', { class: 'meta' }, 'Also in this file: ',
             imp.otherCharacters.map((n) => h('button', { class: 'link', onclick: () => run(files, mode, n) }, n)))
         : null,
-      h('p', { class: 'level' }, h('strong', {}, `${level.title} rig. `), `${level.bends}. Worked out from the pieces found.`),
+      rig.nodes
+        ? h('p', { class: 'level' }, h('strong', {}, `${RIG_KIND_LABEL[rig.kind ?? 'four']} rig. `), 'Layers named like a node move with it. Check the nodes in Characters.')
+        : h('p', { class: 'level' }, h('strong', {}, `${level.title} rig. `), `${level.bends}. Worked out from the pieces found.`),
       h('h3', {}, 'Check report'),
-      issueList([...levelIssues(rig, rig.level), ...issues]),
+      issueList(found),
       h('button', { class: 'primary', id: 'open-editor', onclick: () => onDone(current!, files, mode) }, 'Open in editor'),
     ].filter((n) => n !== null));
     review.scrollIntoView({ block: 'nearest' });

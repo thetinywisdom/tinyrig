@@ -51,7 +51,9 @@ export async function importPsd(
           continue;
         }
         if (!layer.canvas) continue; // empty layer
-        if (c.kind === 'piece') {
+        // Any name of your own is a part too (a tail, an ear): a node with the same name moves it.
+        const own = c.kind === 'unknown' && !/^(background|bg|layer|sketch|rough|guides?|ref|reference|notes?)(_|$)/.test(c.name);
+        if (c.kind === 'piece' || own) {
           if (layer.hidden) hidden.add(layer.name!);
           const v = view ?? fileView ?? 'front';
           if (!views.has(v)) views.set(v, new Map());
@@ -60,7 +62,7 @@ export async function importPsd(
           const pair = pieces.get(c.name)!;
           if (pass === 'line') pair.line ??= layer;
           else pair.fill ??= layer; // a piece with no suffix counts as fill
-        } else if (c.kind === 'unknown' && !/^(background|layer)(_|$)/.test(c.name)) unknown.add(layer.name ?? '');
+        }
       }
     };
     walk(psd.children, null);

@@ -5,6 +5,8 @@ import {
   type BoneId, type RigLevel, type ViewId,
 } from '../model/skeleton';
 import type { ImportResult, Issue, PieceRaster, Pt, Rig, RigView } from '../model/types';
+import { attachByName, fitKind, keptAncestor, nodesOf, rootNode, sameName, skeletonOf, templateNodes, templateSpot, type RigKind } from '../model/rig';
+import { ROOT_BONE } from '../model/skeleton';
 import { guessPivot, maskCentroid, maskFarthest } from './raster';
 
 /** Preferred piece on a bone when several attach to it (hair_back also rides the head bone). */
@@ -25,7 +27,8 @@ function pieceAtOrAbove(pieces: PieceRaster[], bone: BoneId): PieceRaster | unde
 function buildView(pieces: PieceRaster[], viewId: ViewId, issues: Issue[]): RigView {
   const view: RigView = { pieces: {}, pivots: {}, rootPivot: { x: 0, y: 0 }, tips: {}, groupOrder: [] };
   for (const p of pieces) {
-    const def = pieceDef(p.name)!;
+    // A layer with a name of your own is a part too; it moves with the hips until a node takes it.
+    const def = pieceDef(p.name) ?? { bone: ROOT_BONE, group: p.name };
     view.pieces[p.name] = { ...def, bbox: p.bbox, scale: p.scale, z: p.z };
     if (def.shared === 'hand') {
       // Drawn pointing down with the wrist at the top edge: the wrist point sits just inside that edge.
@@ -81,7 +84,10 @@ function buildView(pieces: PieceRaster[], viewId: ViewId, issues: Issue[]): RigV
   }
 
   const top = new Map<string, number>();
-  for (const p of pieces) if (PIECES[p.name]) top.set(PIECES[p.name].group, Math.max(top.get(PIECES[p.name].group) ?? -1, p.z));
+  for (const p of pieces) {
+    const piece = view.pieces[p.name];
+    if (!piece.variant) top.set(piece.group, Math.max(top.get(piece.group) ?? -1, p.z));
+  }
   view.groupOrder = [...top.entries()].sort((a, b) => a[1] - b[1]).map(([g]) => g);
   return view;
 }
@@ -101,7 +107,95 @@ export function buildRig(imp: ImportResult): { rig: Rig; issues: Issue[] } {
     const pieces = imp.views[v];
     if (pieces?.length) rig.views[v] = buildView(pieces, v, issues);
   }
+  // Mostly names of your own: a creature or something else. Start from the rig its layer names fit best.
+  const names = [...new Set(VIEWS.flatMap((v) => (imp.views[v] ?? []).map((p) => p.name)))];
+  const creature = fitKind(names, ['two', 'four']);
+  if (creature.score > names.filter((n) => PIECES[n]).length) applyKind(rig, imp, creature.kind, 'high');
   return { rig, issues };
+}
+
+/** Pieces of one view, by bone, as the rig attaches them now. */
+function piecesOnBone(rig: Rig, view: ViewId, imp: ImportResult, bone: BoneId): PieceRaster[] {
+  const rv = rig.views[view], node = nodesOf(rig).find((n) => n.bone === bone);
+  const named = (p: PieceRaster) => p.name === bone || (node ? sameName(node.name, p.name) : false);
+  // The layer named like the part comes first: a simple arm also carries the forearm and hand.
+  return (imp.views[view] ?? []).filter((p) => rv?.pieces[p.name]?.bone === bone && !rv.pieces[p.name].variant)
+    .sort((a, b) => Number(named(b)) - Number(named(a)));
+}
+
+/**
+ * Guess where a node turns in a view: where its layer overlaps the layer it moves with, as the importer
+ * does for human joints. Without layers to go by, the starting rig's spot (or the middle of its parent).
+ */
+export function guessNodePoint(rig: Rig, imp: ImportResult | undefined, view: ViewId, nodeId: string): Pt | null {
+  const rv = rig.views[view];
+  if (!rv) return null;
+  const nodes = nodesOf(rig), node = nodes.find((n) => n.id === nodeId);
+  if (!node) return null;
+  const skel = skeletonOf({ nodes });
+  if (imp && node.parent) {
+    const child = piecesOnBone(rig, view, imp, node.bone)[0];
+    let parent: PieceRaster | undefined;
+    for (let b: BoneId | undefined = node.parent; b && !parent; b = skel.jointOfBone[b]?.parent) parent = piecesOnBone(rig, view, imp, b)[0];
+    if (child && parent) {
+      const guess = guessPivot(child.mask, parent.mask, skel.jointOfBone[node.bone]?.guess ?? 'both');
+      if (guess) return round(guess);
+      const towards = maskCentroid(parent.mask), far = towards && maskFarthest(child.mask, towards), centre = maskCentroid(child.mask);
+      if (far && centre) return round({ x: 2 * centre.x - far.x, y: 2 * centre.y - far.y });
+    }
+  }
+  if (imp && !node.parent) {
+    // The root turns around the middle of its own layer.
+    const c = piecesOnBone(rig, view, imp, node.bone)[0];
+    const centre = c && maskCentroid(c.mask);
+    if (centre) return round(centre);
+  }
+  return (rig.kind && templateSpot(rig.kind, node.id, rv, rv.faces ?? 'left')) || null;
+}
+
+/**
+ * Use a starting rig at a level of detail. Changing only the detail keeps your names, connections, points and
+ * the nodes you added; parts whose node goes move with the node above. A different starting rig starts over.
+ */
+export function applyKind(rig: Rig, imp: ImportResult | undefined, kind: RigKind, level: RigLevel = 'high') {
+  const same = (rig.nodes ? rig.kind ?? 'human' : 'human') === kind;
+  const old = nodesOf(rig);
+  const full = templateNodes(kind).map((t) => {
+    const o = same ? old.find((n) => n.id === t.id) : undefined;
+    return o ? { ...t, name: o.name, parent: o.parent } : t;
+  });
+  const mine = same ? old.filter((n) => !full.some((t) => t.id === n.id)) : [];
+  // Attach by name against the whole rig first, so a hand layer finds the hand before the hand is dropped.
+  rig.nodes = [...full, ...mine];
+  attachByName(rig);
+  const wanted = new Set([...templateNodes(kind, level).map((n) => n.id), ...mine.map((n) => n.id)]);
+  const kept = new Set(rig.nodes.filter((n) => wanted.has(n.id)).map((n) => n.bone));
+  const up = keptAncestor(rig.nodes, kept);
+  rig.nodes = rig.nodes.filter((n) => wanted.has(n.id)).map((n) => ({ ...n, parent: n.parent && up(n.parent) }));
+  rig.kind = kind;
+  rig.level = level;
+  for (const rv of Object.values(rig.views)) for (const p of Object.values(rv?.pieces ?? {})) if (!p.shared) p.bone = up(p.bone);
+  const root = rootNode(rig.nodes);
+  for (const v of VIEWS) {
+    const rv = rig.views[v];
+    if (!rv) continue;
+    const before = same ? rv.pivots : {};
+    rv.pivots = {};
+    rv.tips = {};
+    for (const n of rig.nodes) {
+      if (n === root) continue;
+      const at = before[n.id] ?? guessNodePoint(rig, imp, v, n.id);
+      if (at) rv.pivots[n.id] = at;
+    }
+    if (!same) {
+      // Human hips: the middle between the two hip points, as for imported people.
+      const hips = [rv.pivots.hip_L, rv.pivots.hip_R].filter(Boolean) as Pt[];
+      rv.rootPivot = kind === 'human' && hips.length === 2
+        ? round({ x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 })
+        : guessNodePoint(rig, imp, v, root.id) ?? rv.rootPivot;
+    }
+    for (const limb of LIMBS) if (rv.pivots[limb.end]) rv.tips[limb.id] = { ...rv.pivots[limb.end] };
+  }
 }
 
 /** Pieces a level needs that a view does not have. */

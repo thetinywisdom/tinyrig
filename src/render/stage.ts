@@ -8,6 +8,7 @@ import { Application, CanvasSource, Container, Graphics, Matrix, RenderTexture, 
 import { maskHit } from '../import/raster';
 import { apply, boneMatrices, drawList, invert, mul, translate, scale as scaleMat, type DrawItem, type Mat } from '../model/pose';
 import type { BoneId, JointId, ViewId } from '../model/skeleton';
+import { skeletonOf } from '../model/rig';
 import { cameraRect, safeArea, type Background, type Camera, type FormatDef, type Shot, type TextItem } from '../model/shot';
 import type { ImportResult, PieceRaster, Pose, Pt, Rect, Rig } from '../model/types';
 
@@ -33,14 +34,14 @@ export class ActorView {
   constructor(private textures: CharTextures, private makeWhole: (t: PieceTextures) => Texture) {}
 
   draw(rig: Rig, pose: Pose, unlocked: Set<JointId>) {
-    const key = JSON.stringify([pose, rig.level, rig.views[pose.view]]);
+    const key = JSON.stringify([pose, rig.level, rig.nodes, rig.views[pose.view]]);
     if (key === this.lastKey) return false;
     this.lastKey = key;
     const view = rig.views[pose.view];
     this.container.removeChildren();
     this.items = [];
     if (!view) return true;
-    this.mats = boneMatrices(view, pose, unlocked);
+    this.mats = boneMatrices(view, pose, unlocked, skeletonOf(rig));
     drawList(view, pose).forEach((item, i) => {
       const tex = this.textures.get(`${pose.view}/${item.piece}`);
       const info = view.pieces[item.piece];

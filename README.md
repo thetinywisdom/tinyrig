@@ -19,7 +19,10 @@ npm test           # unit tests
 
 1. **Characters.** Import a character drawn in Illustrator, Figma or Procreate, one part per layer. Drag each dot to
    where that part turns. Draw it from as many angles as you like: front, 3/4, side, back. For side and 3/4
-   drawings, say which way the character looks.
+   drawings, say which way the character looks. Every node has a name ("L hand", "Tail"): start from a **Human**,
+   **2 legs** or **4 legs** rig, **Simple**, **Medium** or **Complex**, then add your own nodes (more legs, ears, a
+   tail) and drop one node on another to connect them. A layer named like a node moves with it; or click a layer,
+   then a node.
 2. **Storyboard.** Your scene as a grid of panels: a sketch, notes and a length each. Drop sketch files to make panels.
 3. **Act it out.** Open a panel, take a photo with the webcam or choose photos of yourself. The app finds your body
    and puts dots on it; drag any that are off. Your character copies the pose, in the angle you stand at.
@@ -35,6 +38,8 @@ fits any character).
 - `char_<name>` holds the angles `front`, `three_quarter` (or `quarter`, `3q`), `side`, `back`, which hold the parts:
   `head`, `chest`, `pelvis`, `upperarm_L`, `forearm_L`, `hand_L`, `thigh_L`, `shin_L`, `foot_L` and the `_R` ones.
 - Procreate: one PSD per angle (`momo_front.psd`, `momo_3q.psd`), each part a `_line` layer over a `_fill` layer.
+- Any other name is a part of your own (`tail`, `ear_L`, `front_leg_L`). Name a node the same, and it moves that layer.
+  Spaces, order and capitals do not matter: `front_leg_L`, "L front leg" and "Left Front Leg" are one name.
 - The import screen lists the full naming rules when an import has a problem.
 
 ## Project folder

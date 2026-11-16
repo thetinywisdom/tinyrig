@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="1000" height="700">
+  <g id="char_cat" fill="#f2c28b" stroke="#3a2a1a" stroke-width="6">
+    <rect id="front_leg_R" x="372" y="420" width="38" height="150" rx="16"/>
+    <ellipse id="front_paw_R" cx="394" cy="572" rx="30" ry="15"/>
+    <rect id="back_leg_R" x="642" y="420" width="38" height="150" rx="16"/>
+    <ellipse id="back_paw_R" cx="664" cy="572" rx="30" ry="15"/>
+    <ellipse id="tail" cx="770" cy="330" rx="100" ry="16"/>
+    <ellipse id="body" cx="500" cy="400" rx="230" ry="90"/>
+    <rect id="front_leg_L" x="322" y="420" width="38" height="150" rx="16"/>
+    <ellipse id="front_paw_L" cx="344" cy="572" rx="30" ry="15"/>
+    <rect id="back_leg_L" x="592" y="420" width="38" height="150" rx="16"/>
+    <ellipse id="back_paw_L" cx="614" cy="572" rx="30" ry="15"/>
+    <circle id="head" cx="270" cy="300" r="80"/>
+  </g>
+</svg>

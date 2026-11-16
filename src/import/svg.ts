@@ -32,6 +32,19 @@ function containsPiece(el: Element): boolean {
   return false;
 }
 
+/** Names apps give objects nobody named: path123, Vector, Layer_1, Rectangle 2. */
+const AUTO_NAME = /^(path|rect|rectangle|circle|ellipse|polygon|polyline|line|vector|group|layer|g|svg|clip|mask|artboard|frame|union|subtract|intersect|exclude|shape|image|object|compound|use)\w*$/;
+/** Layers that are not part of a character. */
+const IGNORED = /^(background|bg|sketch|rough|guides?|ref|reference|notes?)(_|$)/;
+
+function containsNamed(el: Element): boolean {
+  for (const d of el.querySelectorAll('[id], [data-name]')) {
+    const c = classifyName(nameOf(d)!);
+    if (c.kind !== 'unknown' || (!AUTO_NAME.test(c.name) && !IGNORED.test(c.name))) return true;
+  }
+  return false;
+}
+
 function scan(root: SVGSVGElement, fallbackName: string): Scan {
   const chars: Scan['chars'] = new Map();
   const issues: Issue[] = [];
@@ -61,15 +74,14 @@ function scan(root: SVGSVGElement, fallbackName: string): Scan {
         if (GROUP_OR_PIECE.has(c.name) && containsPiece(child)) walk(child, char, view);
         else if (c.variant && !view) shared.push({ char: char ?? fallbackName, name: c.name, el: child });
         else add(char ?? fallbackName, view ?? 'front', c.name, child);
-      } else {
+      } else if (AUTO_NAME.test(c.name) || IGNORED.test(c.name) || (hasChars && !char)) {
         if (child.children.length) walk(child, char, view);
-        // Apps auto-name unnamed objects (path123, Vector, Layer_1): only report names inside a character.
-        if (char && !/^(path|rect|circle|ellipse|polygon|line|vector|group|layer|g|svg|clip|mask|artboard|frame)\w*$/.test(c.name)) {
-          unknown.add(raw);
-        }
-      }
+      } else if (containsNamed(child)) walk(child, char, view); // a folder of your own
+      // Any other name is a part of your own (a tail, an ear, a prop): a node with the same name moves it.
+      else add(char ?? fallbackName, view ?? 'front', c.name, child);
     }
   };
+  const hasChars = [...root.querySelectorAll('[id], [data-name]')].some((d) => classifyName(nameOf(d)!).kind === 'char');
   walk(root, null, null);
   for (const v of shared) {
     const views = chars.get(v.char);

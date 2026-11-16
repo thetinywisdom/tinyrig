@@ -3,7 +3,7 @@
 // stills), and pictures are cached until their shot changes.
 import type { Project } from '../project/project';
 import { evaluate, formatById, stackOrder, visibleLayers, visibleTexts, type Shot } from '../model/shot';
-import { unlockedJoints } from '../model/skeleton';
+import { unlockedOf } from '../model/rig';
 import { StageView, type DrawActor, type SceneFrame } from './stage';
 
 /**
@@ -17,7 +17,7 @@ export function finishedFrame(project: Project, shot: Shot, frame: number, opts:
     const entry = project.characters.find((c) => c.name === a.character);
     if (!entry) continue;
     const pose = evaluate(shot, a, frame);
-    if (entry.data.rig.views[pose.view]) actors.push({ id: a.id, rig: entry.data.rig, pose, unlocked: unlockedJoints(entry.data.rig.level), extra: a.role === 'extra' });
+    if (entry.data.rig.views[pose.view]) actors.push({ id: a.id, rig: entry.data.rig, pose, unlocked: unlockedOf(entry.data.rig), extra: a.role === 'extra' });
   }
   return {
     shot, actors, order: stackOrder(shot),

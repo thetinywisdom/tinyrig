@@ -37,8 +37,14 @@ The owner rejected the earlier editor as too complex: **every new control has to
 2. **Act it out** (one panel): before a take, "Use the webcam / Choose photos". After: your photo with draggable dots
    (left), the character copying it (right), the poses along the bottom with hold and move times, **Play**,
    **Background…**, angle buttons, **Flip**, **Save as a pose**, **My poses**. "Next photo plays" picks which character.
-3. **Characters**: list, angle tabs (Front / 3/4 / Side / Back; missing ones greyed), drag the joint dots,
-   **Looks Left / Right** for side and 3/4 drawings, drag a body part to try a bend (never stored).
+3. **Characters**: list, angle tabs (Front / 3/4 / Side / Back; missing ones greyed), **Looks Left / Right** for side and
+   3/4 drawings, drag a body part to try a bend (never stored). The **rig panel** on the right:
+   - Start from **Human / 2 legs / 4 legs**, at **Simple / Medium / Complex** detail.
+   - **Nodes**, each with a name you can edit ("L hand"). Drag a node to place it; **drop a node on another to connect**
+     them (it then moves with that one). **+ Add a node**, then click where it turns. Delete removes the selected node.
+   - **Layers**, by name, with the node that moves each. Click a layer (in the list or on the drawing), then a node.
+   - A layer and a node with the same name attach by themselves ("L hand" = `hand_L` = "Left Hand").
+   - Ctrl+Z undoes any rig change.
 
 ## 3. Status
 
@@ -48,6 +54,7 @@ The owner rejected the earlier editor as too complex: **every new control has to
 | 2. Act it out from photos | Done: photos and single webcam photos, dots, angle, flip, poses, holds, Play, background, saved poses. |
 | 3. Characters screen and new app shell | Done. Old editor deleted. |
 | 3b. Half body (from the waist up) | Done. Tracker guesses outside the photo are ignored (`inPicture`); unseen parts keep their pose across angles; without hips the waist leans 30° at most; `bodyShown()` labels the photo. |
+| 3c. Rigs of your own | Done. Named nodes per character (`Rig.nodes`), starting rigs human / 2 legs / 4 legs at Simple / Medium / Complex, drag-to-connect, add, rename, remove, layer-to-node, name matching. Layers with any name import as parts. |
 | 4. Webcam takes (a few seconds of video, key poses picked) | **Next.** |
 | 5. Video export of the storyboard | Not started. |
 | 6. Tune the angle thresholds on the owner's real photos | Waiting for photos. |
@@ -61,6 +68,7 @@ TypeScript + Vite, PixiJS, no UI framework (`h()` DOM helper).
 | `src/model/act.ts` | A panel acted out: `CastMember`, `Moment` (hold, move, photo, points, poses), `compileActed()` → a `Shot` the renderer draws. Pure, tested. |
 | `src/model/storyboard.ts` | Panels (`cast`, `moments`, `background`, or a sketch and typed duration), scene time. |
 | `src/model/skeleton.ts`, `pose.ts`, `types.ts`, `shot.ts` | The engine: bones, joints, views (`front`, `quarter`, `side`, `back`), FK/IK, keys and `evaluate()`. |
+| `src/model/rig.ts` | Rigs of your own: nodes, starting rigs and their detail levels, `skeletonOf(rig)`, name matching (`sameName`, `displayName`), `attachByName`. Pure, tested. |
 | `src/capture/tracker.ts` | MediaPipe pose (local files), points in pixels with depth `z`. |
 | `src/capture/facing.ts` | Front / 3/4 / side / back and which way you look, from the points. Pure, tested. |
 | `src/capture/mapping.ts` | Points → joint angles against a drawing's rest pose (any angle). |
@@ -70,6 +78,9 @@ TypeScript + Vite, PixiJS, no UI framework (`h()` DOM helper).
 | `src/main.ts` | Routing between screens, saving, project menu. |
 
 Ideas to hold:
+- **A rig is named nodes.** `Rig.nodes` (missing = the old human rig). A node's `id` keys its point and its angle; its
+  `bone` is the part layers attach to. The starting rigs reuse the human joint ids (a front leg is `shoulder_L`, a back
+  leg `hip_L`), so acting from a photo also moves 2- and 4-legged creatures. Nodes you add get ids `n_<k>`.
 - **A pose is angles, not positions.** Each character stands where it was cast; poses turn its parts.
 - **Mirror.** A photo is copied as it looks (your left drives the character's left). A flipped drawing is read the
   other way round (`mirror XOR flip` in `poseFromPoints`).

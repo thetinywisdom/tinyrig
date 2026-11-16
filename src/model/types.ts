@@ -36,6 +36,17 @@ export interface RigView {
   faces?: 'left' | 'right';
 }
 
+/** A point where a part turns, with a name you choose. The part's layers move with it. */
+export interface RigNode {
+  /** Key of its point in each view's pivots, and of its angle in a pose. */
+  id: JointId;
+  /** The part that turns here: layers attach to it. */
+  bone: BoneId;
+  name: string;
+  /** The part it moves with. Null for the root, whose point is the view's rootPivot. */
+  parent: BoneId | null;
+}
+
 /** characters/<name>/rig.json */
 export interface Rig {
   version: 1;
@@ -45,6 +56,10 @@ export interface Rig {
   /** How the source was imported, so the project can re-read it: one file, or one file per piece. */
   importMode?: 'whole' | 'parts';
   views: Partial<Record<ViewId, RigView>>;
+  /** The character's own rig. Missing means the human rig every older character has. */
+  nodes?: RigNode[];
+  /** Which starting rig the nodes began from. */
+  kind?: 'human' | 'two' | 'four';
   /** Joint limits in degrees from the rest pose, [min, max]. Missing = free. */
   limits: Record<JointId, [number, number]>;
 }

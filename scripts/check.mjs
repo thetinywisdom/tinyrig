@@ -92,6 +92,32 @@ if (want('import')) {
   }
 }
 
+// --- a creature with layer names of its own: the 4-legged rig, attached by name -------------
+if (want('characters')) {
+  const { context, page } = await fresh();
+  await page.click('#new-scene'); await page.waitForSelector('.sb-panel');
+  await page.click('#sb-characters');
+  const box = { x: 0, y: 0 };
+  // A creature drawn with names of your own: it gets the 4-legged rig, layers attached by name.
+  await page.click('#chars-import');
+  await page.setInputFiles('.importer input[type=file]', 'scripts/fixtures/char_cat.svg');
+  await page.waitForSelector('#open-editor', { timeout: 60000 });
+  ok('a cat imports as a 4-legged rig', /4 legs rig/.test(await page.textContent('.review')), await page.textContent('.review'));
+  await page.click('#open-editor');
+  await page.waitForSelector('[data-layer="tail"]');
+  ok('the tail layer moves with the Tail node', /Tail\s*→ Tail/.test(await page.textContent('[data-layer="tail"]')));
+  ok('the front paw layer moves with L front paw', /→ L front paw/.test(await page.textContent('[data-layer="front_paw_L"]')));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${out}/characters-cat.png` });
+  // Bend the tail.
+  const tail = await page.evaluate(() => { const c = window.__chars, v = c.rigView(); const b = v.pieces.tail.bbox; return c.stage.worldToScreen({ x: b.x + b.w * 0.8, y: b.y + b.h / 2 }); });
+  Object.assign(box, await page.locator('.chars-stage canvas').boundingBox());
+  await page.mouse.move(box.x + tail.x, box.y + tail.y); await page.mouse.down();
+  await page.mouse.move(box.x + tail.x, box.y + tail.y - 60, { steps: 6 }); await page.mouse.up();
+  ok('the tail bends around its node', await page.evaluate(() => Math.abs(window.__chars.trial?.angles.tail ?? 0) > 5));
+  await context.close();
+}
+
 // From here on, one browser: a new scene, the sample cleared, the High placeholder imported.
 const { context, page } = await fresh();
 await page.click('#new-scene'); await page.waitForSelector('.sb-panel');
@@ -130,6 +156,56 @@ if (want('characters')) {
   ok('nothing tried is kept on the rig', await ev(() => !window.__project().poses.length));
   await page.click('#chars-reset');
   await page.click('.chars-tabs [data-view="front"]');
+
+  // Named nodes and layers.
+  ok('nodes have names: the left wrist node is "L hand"', await page.inputValue('[data-node="wrist_L"] input') === 'L hand');
+  ok('names show on the drawing', (await page.textContent('.chars-marks')).includes('L hand'));
+  ok('layers show by name with the node that moves them', /L hand\s*→ L hand/.test(await page.textContent('[data-layer="hand_L"]')));
+  // Click a layer, then a node: that node moves it.
+  await page.click('[data-layer="hand_L"]');
+  ok('picking a layer asks for its node', /click the node that moves L hand/.test(await page.textContent('#chars-hint')));
+  await page.click('[data-node="elbow_L"] .muted');
+  ok('a layer then a node attaches it', await ev(() => window.__chars.rigView().pieces.hand_L.bone) === 'forearm_L');
+  await page.keyboard.press('Control+z');
+  ok('undo puts it back', await ev(() => window.__chars.rigView().pieces.hand_L.bone) === 'hand_L');
+  // Add a node on the left forearm and name it like a layer: the layer attaches by itself.
+  await page.click('#chars-add');
+  const mid = await ev(() => { const c = window.__chars, v = c.rigView(); return c.stage.worldToScreen({ x: (v.pivots.elbow_L.x + v.pivots.wrist_L.x) / 2, y: (v.pivots.elbow_L.y + v.pivots.wrist_L.y) / 2 }); });
+  await page.mouse.click(box.x + mid.x, box.y + mid.y);
+  const added = await ev(() => window.__chars.selNode);
+  ok('Add a node puts a new node where you click, on the part you clicked', await ev((id) => window.__chars.rig().nodes.find((n) => n.id === id)?.parent, added) === 'forearm_L');
+  await page.fill(`[data-node="${added}"] input`, 'hand L');
+  await page.press(`[data-node="${added}"] input`, 'Enter');
+  ok('naming a node like a layer attaches the layer', await ev((id) => window.__chars.rigView().pieces.hand_L.bone === id, added));
+  // Drop the new node on the chest node: it moves with the chest.
+  const from = await ev((id) => window.__chars.stage.worldToScreen(window.__chars.rigView().pivots[id]), added);
+  const to = await ev(() => window.__chars.stage.worldToScreen(window.__chars.rigView().pivots.waist));
+  const before = await ev((id) => ({ ...window.__chars.rigView().pivots[id] }), added);
+  await page.mouse.move(box.x + from.x, box.y + from.y); await page.mouse.down();
+  await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 8 });
+  ok('dragging over another node offers to connect', (await page.textContent('.chars-marks')).includes('Connect to'));
+  await page.mouse.up();
+  ok('dropping a node on another connects them', await ev((id) => window.__chars.rig().nodes.find((n) => n.id === id).parent, added) === 'chest');
+  const after = await ev((id) => window.__chars.rigView().pivots[id], added);
+  ok('the dropped node stays where it was', Math.hypot(after.x - before.x, after.y - before.y) < 0.5, JSON.stringify([before, after]));
+  await page.screenshot({ path: `${out}/characters-rig.png` });
+  // Delete it: its layer goes back to the node above.
+  await page.click(`[data-node="${added}"] .muted`);
+  await page.keyboard.press('Delete');
+  ok('Delete removes a node; its layer moves with the node above', await ev((id) => !window.__chars.rig().nodes.some((n) => n.id === id) && window.__chars.rigView().pieces.hand_L.bone === 'chest', added));
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Control+z');
+  // Detail: Simple drops the elbows, knees, hands and feet; their layers move with the node above.
+  await page.click('[data-detail="low"]');
+  ok('Simple: fewer nodes, the hand layer moves with the upper arm', await ev(() => { const r = window.__chars.rig(); return !r.nodes.some((n) => n.id === 'elbow_L') && window.__chars.rigView().pieces.hand_L.bone === 'upperarm_L'; }));
+  await page.click('[data-detail="high"]');
+  ok('Complex: every node is back, and the hand layer is on L hand again', await ev(() => window.__chars.rig().nodes.some((n) => n.id === 'wrist_L') && window.__chars.rigView().pieces.hand_L.bone === 'hand_L'));
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  // Starting rigs.
+  await page.click('[data-kind="four"]');
+  ok('4 legs: a starting rig with a tail and paws', await ev(() => window.__chars.rig().nodes.some((n) => n.name === 'Tail') && window.__chars.rig().nodes.some((n) => n.name === 'L front paw')));
+  await page.keyboard.press('Control+z');
+  ok('undo goes back to the human rig', await ev(() => (window.__chars.rig().kind ?? 'human') === 'human' && window.__chars.rig().nodes?.some((n) => n.name === 'L hand') !== false));
+
 }
 
 // --- act: a photo of a known pose, the dots, the angle, more poses, playing -------------------
