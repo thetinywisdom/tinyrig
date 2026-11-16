@@ -399,11 +399,12 @@ export class AnimateView {
       this.left.replaceChildren(h('div', { class: 'act-card' },
         h('h1', {}, `Act ${name}`),
         h('p', { class: 'muted' }, 'Do the pose yourself. The app finds your body, and the character copies it.'),
+        h('div', { class: 'act-choices' }, ...this.recordControls()),
         h('div', { class: 'act-choices' },
-          h('button', { class: 'primary big', id: 'act-webcam', onclick: () => void this.webcamPhoto() }, 'Use the webcam'),
-          h('button', { class: 'big', id: 'act-photos', onclick: () => this.choosePhotos() }, 'Choose photos…')),
+          h('button', { id: 'act-webcam', onclick: () => void this.webcamPhoto() }, 'One webcam photo'),
+          h('button', { id: 'act-photos', onclick: () => this.choosePhotos() }, 'Choose photos…')),
         h('div', { class: 'act-steps' },
-          h('span', {}, h('b', {}, '1 · Act'), 'a photo, or several in order'),
+          h('span', {}, h('b', {}, '1 · Act'), 'record a take, or pose for photos'),
           h('span', {}, h('b', {}, '2 · Check the dots'), 'drag any that are off'),
           h('span', {}, h('b', {}, '3 · The character'), 'copies you, in the same angle'))));
       return;
@@ -415,7 +416,8 @@ export class AnimateView {
         h('span', { class: 'grow' }), lp.points ? h('span', { class: 'hint px' }, 'Drag a dot the app got wrong') : null),
       this.photoBox,
       h('div', { class: 'act-bar' },
-        h('button', { class: 'primary', id: 'act-more-webcam', onclick: () => void this.webcamPhoto() }, 'Webcam'),
+        ...this.recordControls(),
+        h('button', { id: 'act-more-webcam', onclick: () => void this.webcamPhoto() }, 'Photo'),
         h('button', { id: 'act-more-photos', onclick: () => this.choosePhotos() }, 'Photos…'),
         lp.photo ? h('button', { id: 'act-retake', onclick: () => this.retake() }, 'Replace photo') : null,
         h('span', { class: 'grow' }),
@@ -426,6 +428,15 @@ export class AnimateView {
         h('button', { id: 'act-remove', onclick: () => this.removeSelected() }, 'Remove')));
     if (lp.frames?.length) this.photoBox.replaceChildren(h('p', { class: 'muted act-nophoto' }, `A recorded take: ${lp.frames.length} frames, played as you acted them. Record again over it, or turn Every frame off to get key poses you can edit.`));
     else this.renderPhoto(lp, castId, i);
+  }
+
+  /** Record and its Every frame switch: they belong with the webcam, where you act. */
+  private recordControls(): HTMLElement[] {
+    return [
+      h('button', { id: 'act-record', class: 'rec primary', onclick: () => void this.startRecording(), title: 'Act it out live: the character follows you, and the take lands on the timeline' }, 'Record'),
+      h('label', { class: 'rec-every', title: 'Off: the take becomes key poses you can edit. On: every frame, as acted.' },
+        h('input', { type: 'checkbox', id: 'rec-every', checked: this.everyFrame, onchange: (e: Event) => { this.everyFrame = (e.target as HTMLInputElement).checked; } }), h('span', { class: 'px' }, 'Every frame')),
+    ];
   }
 
   private renderCameraPanel() {
@@ -552,13 +563,7 @@ export class AnimateView {
         h('button', { id: 'cam-through', class: this.through ? 'selected' : '', 'aria-pressed': String(this.through), onclick: () => { this.through = !this.through; this.fitted = false; this.renderStageBar(); void this.drawStage(); } }, 'See through camera'),
         h('button', { class: 'primary', id: 'cam-key', onclick: () => this.change(() => { const k = this.keyHere(); this.sel = { kind: 'camera', id: k.id }; }) }, '+ Key here'));
     }
-    if (castId && s?.kind !== 'camera') {
-      items.push(
-        h('button', { id: 'act-record', class: 'rec' + (this.rec ? ' on' : ''), onclick: () => (this.rec ? this.stopRecording() : void this.startRecording()) }, this.rec ? '■ Stop' : '● Record'),
-        h('button', { id: 'rec-every', class: this.everyFrame ? 'selected' : '', 'aria-pressed': String(this.everyFrame), title: 'Off: the take becomes key poses you can edit. On: keep every frame as acted.',
-          onclick: () => { this.everyFrame = !this.everyFrame; this.renderStageBar(); } }, 'Every frame'));
-    }
-    if (s?.kind === 'camera') { /* camera buttons above */ } else if (lp && castId) {
+    if (s?.kind !== 'camera' && lp && castId) {
       items.push(
         views.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Angle' }, views.map((v) => h('button', {
           class: lp.pose.view === v ? 'selected' : '', 'data-view': v,
