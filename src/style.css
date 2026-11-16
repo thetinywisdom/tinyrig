@@ -449,3 +449,20 @@ details.naming > summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
 .size-opt span:nth-child(2) { flex: 1; }
 .size-opt.selected { background: var(--ink); color: var(--tile); }
 .size-opt.selected .muted { color: var(--accent); }
+
+/* --- Export sheet ------------------------------------------------------------------------- */
+.export { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(17, 17, 17, 0.45); }
+.export-sheet { width: min(520px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 18px; background: var(--tile); border: 1px solid var(--ink); border-radius: 14px; }
+.export-head { display: flex; align-items: center; gap: 8px; font-size: 17px; }
+.icon-x { width: 30px; height: 30px; padding: 0; border-radius: 50%; font-size: 18px; line-height: 1; }
+.export-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.export-fact { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--ink); border-radius: var(--r-s); background: var(--paper); }
+.export-fact b { font-family: var(--pixel); font-weight: 400; font-size: 20px; line-height: 1; }
+.export-body { display: flex; flex-direction: column; gap: 12px; }
+.export-body p { margin: 0; line-height: 1.45; }
+.export-body .small { font-size: 12.5px; }
+.export-actions { display: flex; align-items: center; gap: 8px; }
+.export-bar { height: 14px; border: 1px solid var(--ink); border-radius: 4px; overflow: hidden; background: var(--paper); }
+.export-fill { display: block; height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 6px); }
+.export-done b { font-weight: 600; }
+.export-done::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; }

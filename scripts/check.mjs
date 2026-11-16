@@ -346,6 +346,22 @@ if (want('act')) {
   ok('scene pictures take the project\'s shape (tall for Reels)', ar.height > ar.width, JSON.stringify(ar));
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${out}/storyboard-acted.png` });
+
+  // Export: the whole storyboard as one MP4 in the project's size.
+  await page.click('#sb-export');
+  await page.waitForSelector('.export-sheet');
+  await page.screenshot({ path: `${out}/export.png` });
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 240000 }), page.click('#export-mp4')]);
+  const file = `${out}/${dl.suggestedFilename()}`;
+  await dl.saveAs(file);
+  const { statSync } = await import('node:fs');
+  const bytes = statSync(file).size;
+  const head = (await import('node:fs')).readFileSync(file).subarray(4, 8).toString('latin1');
+  ok('Export video makes an MP4 of the whole storyboard', /\.mp4$/.test(file) && bytes > 10000 && head === 'ftyp', `${file} ${bytes} ${head}`);
+  await page.waitForSelector('#export-done');
+  ok('the export sheet says what it made', /\.mp4/.test(await page.textContent('#export-done')));
+  await page.screenshot({ path: `${out}/export-done.png` });
+  await page.keyboard.press('Escape');
 }
 
 // --- save: reload keeps the scene and its photos ------------------------------------------

@@ -59,9 +59,9 @@ The owner rejected the earlier editor as too complex: **every new control has to
 | 3b. Half body (from the waist up) | Done. Tracker guesses outside the photo are ignored (`inPicture`); unseen parts keep their pose across angles; without hips the waist leans 30° at most; `bodyShown()` labels the photo. |
 | 3c. Rigs of your own | Done. Named nodes per character (`Rig.nodes`), starting rigs human / 2 legs / 4 legs at Simple / Medium / Complex, drag-to-connect, add, rename, remove, layer-to-node, name matching. Layers with any name import as parts. |
 | 3d. Scenes: Rig and Animate tabs, layers, camera keys, project size, scene rig tweaks | Done. `src/model/scene.ts`, `src/ui/scene.ts`, `src/ui/animate.ts`. Older acted panels move onto lanes and layers when opened. |
-| 3e. Who is who: one photo with two people driving two characters | Not started (the tracker reads one person). |
+| 3e. Who is who: one photo with two people driving two characters | **Next** (the tracker reads one person so far). |
 | 4. Webcam takes (a few seconds of video, key poses picked) | Not started. |
-| 5. Video export of the storyboard | **Next.** Render each scene through its camera at the project size. |
+| 5. Video export of the storyboard | Done. **Export video** on the storyboard: one MP4 (H.264 where the browser has it) or PNG frames, at the project size. Each scene through its camera; scenes not animated yet show their sketch. `src/export/episode.ts`. No sound yet. |
 | 6. Tune the angle thresholds on the owner's real photos | Waiting for photos. |
 
 ## 4. Code

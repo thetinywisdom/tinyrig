@@ -10,6 +10,7 @@ import { pictures } from '../render/thumb';
 import { h } from './dom';
 import { EASE_OUT, enter } from './motion';
 import { clearSample } from './sample';
+import { openExport } from './exportDialog';
 import { compileScene, resizeCamera, SIZES, sizeLabel, type ProjectSize } from '../model/scene';
 
 export interface StoryboardContext {
@@ -268,6 +269,7 @@ export class StoryboardView {
       } }, 'Clear sample') : null,
       this.sizeMenu(),
       h('button', { id: 'sb-characters', onclick: () => this.ctx.characters() }, 'Cast'),
+      h('button', { id: 'sb-export', disabled: !this.sb.panels.length, onclick: () => openExport(project) }, 'Export video'),
       h('span', { class: 'save-state', id: 'save-state', role: 'status' }, this.ctx.saveState()),
       h('details', { class: 'menu' },
         h('summary', {}, 'Project'),
