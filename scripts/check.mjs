@@ -168,7 +168,7 @@ const ev = (fn, arg) => page.evaluate(fn, arg);
 // --- characters: angles, joints, looks, trying a bend -------------------------------------
 if (want('characters')) {
   ok('the imported character is listed with its angles', /Front · 3\/4 · Side/.test(await page.textContent('.chars-who.sel')));
-  ok('Back is offered but greyed out: no back drawing', await page.locator('.chars-tabs [data-view="back"][disabled]').count() === 1);
+  ok('Back is offered as + Back: no back drawing yet', await page.locator('.chars-tabs [data-add-view="back"]').count() === 1);
   await page.click('.chars-tabs [data-view="quarter"]');
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${out}/characters-quarter.png` });
@@ -241,6 +241,15 @@ if (want('characters')) {
   await page.click('[data-detail="high"]');
   ok('Complex: every node is back, and the hand layer is on L hand again', await ev(() => window.__chars.rig().nodes.some((n) => n.id === 'wrist_L') && window.__chars.rigView().pieces.hand_L.bone === 'hand_L'));
   await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  // A missing angle is a way in: + Back imports a drawing for the back.
+  ok('a missing angle offers to add it', /\+ back/i.test(await page.textContent('[data-add-view="back"]')));
+  await choose(page, '[data-add-view="back"]', new URL('./fixtures/momo_side.svg', import.meta.url).pathname);
+  await page.waitForSelector('#match-done', { timeout: 30000 });
+  ok('its parts open in Match your layers, on the new angle', await page.locator('.match-sheet [data-match-view="back"].selected').count() === 1);
+  await page.click('#match-done');
+  ok('the new angle is added to the character, its file kept under the angle\'s name', await ev(() => { const e = window.__project().characters[0]; return !!e.data.rig.views.back && e.files.some((f) => /_back\.svg$/.test(f.name)); }));
+  await page.keyboard.press('Control+z');
+  await page.click('.chars-tabs [data-view="front"]');
   // Starting rigs.
   await page.click('[data-kind="four"]');
   ok('4 legs: a starting rig with a tail and paws', await ev(() => window.__chars.rig().nodes.some((n) => n.name === 'Tail') && window.__chars.rig().nodes.some((n) => n.name === 'L front paw')));

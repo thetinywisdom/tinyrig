@@ -40,9 +40,9 @@ function thumb(r: PieceRaster, size: number): HTMLCanvasElement {
   return c;
 }
 
-export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onChange: () => void) {
+export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onChange: () => void, start?: ViewId) {
   let picked: string | null = null;
-  let view: ViewId = VIEWS.find((v) => imp.views[v]?.length) ?? 'front';
+  let view: ViewId = start && imp.views[start]?.length ? start : VIEWS.find((v) => imp.views[v]?.length) ?? 'front';
   /** Guesses you have moved or confirmed lose their question mark. */
   const confirmed = new Set<string>();
 

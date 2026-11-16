@@ -235,7 +235,8 @@ footer.hint::before { content: ''; width: 8px; height: 8px; border-radius: 50%; 
 .chars-tabs button { padding: 8px 0; font-family: var(--pixel); font-size: 11px; text-transform: uppercase; }
 .chars-tabs button.on { background: var(--ink); color: var(--tile); }
 .chars-tabs button.on::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 7px; vertical-align: 1px; }
-.chars-tabs button.missing { background: repeating-linear-gradient(-45deg, transparent 0 6px, var(--hair) 6px 7px); }
+.chars-tabs button.missing { border-style: dashed; background: transparent; color: var(--muted); }
+.chars-tabs button.missing:hover { color: var(--ink); background: var(--tile-hover); }
 .chars-stage { flex: 1; min-height: 0; width: 100%; position: relative; overflow: hidden; border: 1px solid var(--ink); border-radius: 6px;
   background: var(--paper) radial-gradient(rgba(17, 17, 17, 0.22) 1px, transparent 1.2px) 0 0 / 16px 16px; }
 .chars-stage canvas { display: block; touch-action: none; }
@@ -551,3 +552,7 @@ button.rec.on, button.rec:active { background: var(--accent); }
 .mt-in { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
 .mt-is { display: inline-flex; align-items: center; gap: 8px; }
 .mt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; min-height: 200px; }
+
+.match-wide { width: min(1120px, calc(100% - 32px)); max-height: 92vh; overflow: auto; }
+.match-wide .matcher { margin: 0; }
+.chars-mini { padding: 3px 8px; font-family: var(--pixel); font-size: 10px; text-transform: uppercase; }

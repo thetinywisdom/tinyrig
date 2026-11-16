@@ -379,6 +379,21 @@ export class AnimateView {
     if (s?.kind === 'image') { this.renderImagePanel(s.id); return; }
     const castId = this.who ?? this.p.cast![0].id;
     const name = this.castOf(castId)?.character ?? '';
+    if (!this.rigOfCast(castId)) {
+      // The character was deleted (or renamed) from the cast: its poses are still here. Give them to someone else.
+      const others = this.ctx.project.characters;
+      this.left.replaceChildren(h('div', { class: 'act-card' },
+        h('h1', {}, `${name || 'This character'} is not in your cast`),
+        h('p', { class: 'muted' }, others.length ? 'Its poses are still here. Give them to a character from your cast, or take this lane out.' : 'Import a character, then give it these poses.'),
+        h('div', { class: 'act-choices' }, others.map((c) => h('button', { class: 'primary', 'data-recast': c.name, onclick: () => this.change(() => { const m = this.castOf(castId); if (m) m.character = c.name; }) }, `Use ${c.name}`)),
+          h('button', { id: 'lane-remove', onclick: () => this.change(() => {
+            this.p.cast = this.p.cast!.filter((c) => c.id !== castId);
+            delete this.p.lanes![castId];
+            this.p.stack = this.p.stack?.filter((e) => e.id !== castId);
+            this.sel = null;
+          }) }, 'Take it out of this scene'))));
+      return;
+    }
     const lp = this.selPose();
     if (!lp) {
       this.left.replaceChildren(h('div', { class: 'act-card' },
@@ -555,6 +570,15 @@ export class AnimateView {
           h('div', { class: 'menu-items' }, poses.map((sp) => h('button', { class: 'pose-row', onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); this.applySaved(sp); } },
             sp.thumb ? h('img', { src: sp.thumb, alt: '' }) : h('span', { class: 'no-thumb' }), sp.name)))) : null);
     }
+    const cast = this.ctx.project.characters;
+    items.push(h('details', { class: 'menu', id: 'add-character' }, h('summary', {}, '+ Character'),
+      h('div', { class: 'menu-items' },
+        cast.length ? h('p', { class: 'meta save-status px' }, 'Put on the canvas, inside the camera') : h('p', { class: 'meta save-status' }, 'Your cast is empty.'),
+        cast.map((c) => h('button', { 'data-put': c.name, onclick: (e: Event) => {
+          (e.target as HTMLElement).closest('details')!.removeAttribute('open');
+          this.change(() => { const id = this.castCharacter(c.name); if (id) this.sel = { kind: 'lane', cast: id }; });
+        } }, c.name)),
+        h('button', { onclick: () => this.ctx.toRig() }, 'Import or rig a character…'))));
     items.push(h('button', { id: 'add-image', onclick: () => this.pickFiles('image/*', true, (f) => this.addImages(f)) }, '+ Image'),
       h('button', { id: 'fit-camera', onclick: () => { this.fitted = false; void this.drawStage(); } }, 'Fit'));
     this.stageBar.replaceChildren(...items.filter((n): n is Node => !!n));
@@ -718,7 +742,9 @@ export class AnimateView {
     const span = this.span(), pct = (s: number) => `${(s / span) * 100}%`;
     const rows: Node[] = [];
     const ticks: Node[] = [];
-    for (let s = 0; s <= span; s += 0.5) ticks.push(h('span', { class: 'px', style: `left:${pct(s)}` }, `${s.toFixed(1)}s`));
+    // About a dozen labels, whatever the length: every half second on a short scene, every 10 s on a long one.
+    const step = [0.5, 1, 2, 5, 10, 15, 30, 60].find((x) => span / x <= 14) ?? 120;
+    for (let s = 0; s <= span; s += step) ticks.push(h('span', { class: 'px', style: `left:${pct(s)}` }, step < 1 ? `${s.toFixed(1)}s` : `${s}s`));
     const ruler = h('div', { class: 'tl-ruler' }, ...ticks);
     rows.push(h('div', { class: 'px muted tl-head' }, 'layers'), ruler);
     const stack = stackOf(this.p);

@@ -228,7 +228,7 @@ export function levelIssues(rig: Rig, level: RigLevel): Issue[] {
  * artist would read it: the round part on top is the head, the lowest parts are feet, and so on. Every guess is
  * listed in imp.guessed so the importer can show it for checking.
  */
-export function guessByPlace(rig: Rig, imp: ImportResult) {
+export function guessByPlace(rig: Rig, imp: ImportResult, only?: ViewId) {
   // Where each part's middle sits, as a fraction of the whole drawing (front view; L is on the viewer's right).
   const SPOT: Record<string, [number, number]> = {
     head: [0.5, 0.1], chest: [0.5, 0.3], pelvis: [0.5, 0.48],
@@ -239,6 +239,7 @@ export function guessByPlace(rig: Rig, imp: ImportResult) {
   };
   const guessed: string[] = [];
   for (const v of VIEWS) {
+    if (only && v !== only) continue;
     const rv = rig.views[v], pieces = imp.views[v];
     if (!rv || !pieces?.length) continue;
     const loose = pieces.filter((p) => !PIECES[p.name] && !rv.pieces[p.name]?.variant);
@@ -279,13 +280,14 @@ export function guessByPlace(rig: Rig, imp: ImportResult) {
     if (hips.length === 2) rv.rootPivot = round({ x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 });
     for (const limb of LIMBS) if (rv.pivots[limb.end]) rv.tips[limb.id] = { ...rv.pivots[limb.end] };
   }
-  imp.guessed = guessed;
+  imp.guessed = [...(only ? (imp.guessed ?? []) : []), ...guessed];
 }
 
 /** Work every node's point out again from the layers attached now (after parts were matched by hand). */
-export function refreshPoints(rig: Rig, imp: ImportResult) {
+export function refreshPoints(rig: Rig, imp: ImportResult, only?: ViewId) {
   const nodes = nodesOf(rig), root = rootNode(nodes);
   for (const v of VIEWS) {
+    if (only && v !== only) continue;
     const rv = rig.views[v];
     if (!rv) continue;
     for (const n of nodes) {
@@ -299,4 +301,26 @@ export function refreshPoints(rig: Rig, imp: ImportResult) {
     rv.tips = {};
     for (const limb of LIMBS) if (rv.pivots[limb.end]) rv.tips[limb.id] = { ...rv.pivots[limb.end] };
   }
+}
+
+/**
+ * Add a drawing of one more angle to a character: `added` is a fresh import of the new file(s); its first angle
+ * becomes `view`. Parts take the nodes their names match; numbered parts are placed by where they sit; every node
+ * gets its point in the new angle. Other angles are left as they are.
+ */
+export function addAngle(rig: Rig, imp: ImportResult, added: ImportResult, view: ViewId) {
+  const from = VIEWS.find((v) => added.views[v]?.length);
+  if (!from) return;
+  const pieces = added.views[from]!.map((p) => ({ ...p, view }));
+  imp.views[view] = pieces;
+  // A rig view built from the new parts, then fitted into this character's own nodes.
+  const issues: Issue[] = [];
+  rig.views[view] = buildView(pieces, view, issues);
+  if (rig.nodes) {
+    attachByName(rig);
+    const names = pieces.map((p) => p.name);
+    if ((rig.kind ?? 'human') === 'human' && !names.some((n) => PIECES[n])) guessByPlace(rig, imp, view);
+    refreshPoints(rig, imp, view);
+  }
+  imp.issues.push(...added.issues);
 }

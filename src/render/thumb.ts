@@ -5,6 +5,7 @@ import type { Project } from '../project/project';
 import type { Rig } from '../model/types';
 import { evaluate, formatById, stackOrder, visibleLayers, visibleTexts, type Camera, type FormatDef, type Shot } from '../model/shot';
 import { unlockedOf } from '../model/rig';
+import { VIEWS } from '../model/skeleton';
 import { StageView, type DrawActor, type SceneFrame } from './stage';
 
 /**
@@ -20,7 +21,9 @@ export function finishedFrame(project: Project, shot: Shot, frame: number, opts:
     // A scene may have tweaked this character's rig for itself.
     const rig = (shot as Shot & { rigs?: Record<string, Rig> }).rigs?.[a.character] ?? entry.data.rig;
     const pose = evaluate(shot, a, frame);
-    if (rig.views[pose.view]) actors.push({ id: a.id, rig, pose, unlocked: unlockedOf(rig), extra: a.role === 'extra' });
+    // A pose in an angle the character has no drawing of (a side-only character asked to face front): use an angle it has.
+    if (!rig.views[pose.view]) { const have = VIEWS.find((v) => rig.views[v]); if (!have) continue; pose.view = have; }
+    actors.push({ id: a.id, rig, pose, unlocked: unlockedOf(rig), extra: a.role === 'extra' });
   }
   return {
     shot, actors, order: stackOrder(shot),

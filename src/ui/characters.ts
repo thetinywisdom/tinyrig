@@ -2,7 +2,7 @@
 // The rig is a tree of named nodes: drag a node to where its part turns, drop a node on another to connect
 // them, click a part and then a node to say which node moves it. A layer named like a node attaches by itself.
 // Drag a part to try a bend; nothing you try is kept.
-import { applyKind, guessNodePoint } from '../import/build';
+import { addAngle, applyKind, guessNodePoint, refreshPoints } from '../import/build';
 import { apply, boneMatrices, canBend, clampToLimit, restPose, swingAround } from '../model/pose';
 import {
   attachByName, bonesBelow, DETAIL_LABEL, displayName, newNodeId, nodesOf, RIG_KIND_LABEL, RIG_KINDS, rootNode, skeletonOf, unlockedOf, viewBox,
@@ -16,6 +16,10 @@ import type { Panel } from '../model/storyboard';
 import { StageView } from '../render/stage';
 import { pictures } from '../render/thumb';
 import { h } from './dom';
+import { mountMatcher, unplacedLayers } from './matcher';
+import { importSvg } from '../import/svg';
+import { importPsd } from '../import/psd';
+import { slug } from '../project/project';
 import { rigDrawing } from './icons';
 
 export interface CharactersContext {
@@ -216,6 +220,57 @@ export class CharactersView {
     const at = n.parent ? rv?.pivots[n.id] : rv?.rootPivot;
     if (!box || !at) return -1;
     return this.anchors(box).findIndex((a) => Math.hypot(a.x - at.x, a.y - at.y) < 0.5);
+  }
+
+  /** Import a drawing of an angle this character does not have yet. */
+  private addAngle(view: ViewId) {
+    const entry = this.entry(), name = this.name;
+    if (!entry || !name) return;
+    const psd = entry.files.some((f) => /\.psd$/i.test(f.name));
+    const input = h('input', {
+      type: 'file', accept: psd ? '.psd' : '.svg,.psd',
+      onchange: async () => {
+        const f = input.files?.[0];
+        if (!f) return;
+        const data = await f.arrayBuffer();
+        const ext = /\.psd$/i.test(f.name) ? 'psd' : 'svg';
+        // Saved under the angle's name, so the project opens it as this angle next time.
+        const file = { name: `${slug(name)}_${PROPER_NAME[view]}.${ext}`, data };
+        this.note = `Reading ${f.name}…`;
+        this.render();
+        try {
+          const added = ext === 'psd' ? await importPsd([{ name: f.name, data }]) : await importSvg(new TextDecoder().decode(data), f.name);
+          this.begin();
+          const rig = this.rig()!;
+          addAngle(rig, entry.data.imp, added, view);
+          entry.files = [...entry.files.filter((x) => x.name !== file.name), file];
+          this.loaded.delete(name);
+          this.view = view;
+          this.note = `${VIEW_LABEL[view]} added from ${f.name}.`;
+          this.changed();
+          this.draw(true);
+          // Parts it could not place by name: match them on the figure, this angle first.
+          if (unplacedLayers(entry.data.imp, rig).length || added.views && entry.data.imp.guessed?.some((g) => entry.data.imp.views[view]?.some((p) => p.name === g))) this.openMatcher(view);
+        } catch (err) {
+          this.note = err instanceof Error ? err.message : String(err);
+          this.render();
+        }
+      },
+    });
+    input.click();
+  }
+
+  /** Match your layers, over the Rig screen. */
+  private openMatcher(view?: ViewId) {
+    const entry = this.entry(), rig = this.rig();
+    if (!entry || !rig) return;
+    const box = h('section', { class: 'matcher' });
+    const close = () => { overlay.remove(); refreshPoints(rig, entry.data.imp); this.changed(); this.draw(true); };
+    const overlay = h('div', { class: 'export match-sheet' },
+      h('div', { class: 'export-sheet match-wide', role: 'dialog', 'aria-label': 'Match your layers' },
+        box, h('div', { class: 'export-actions' }, h('span', { class: 'grow' }), h('button', { class: 'primary', id: 'match-done', onclick: close }, 'Done'))));
+    document.body.append(overlay);
+    mountMatcher(box, entry.data.imp, rig, () => this.ctx.onChanged(), view);
   }
 
   private resetToShared() {
@@ -423,9 +478,9 @@ export class CharactersView {
       const has = !!rig.views[v];
       return h('button', {
         class: (v === this.view ? 'on' : '') + (has ? '' : ' missing'), 'data-view': v, 'aria-pressed': String(v === this.view),
-        title: has ? `${VIEW_LABEL[v]} drawing` : `No ${VIEW_LABEL[v]} drawing yet. Add a layer group named "${PROPER_NAME[v]}" to your art file and import it again.`,
-        disabled: !has, onclick: () => { this.view = v; this.trial = null; this.render(); this.draw(true); },
-      }, VIEW_LABEL[v]);
+        title: has ? `${VIEW_LABEL[v]} drawing` : `Import the ${VIEW_LABEL[v]} drawing of this character`, 'data-add-view': has ? undefined : v,
+        onclick: () => { if (!has) { this.addAngle(v); return; } this.view = v; this.trial = null; this.render(); this.draw(true); },
+      }, has ? VIEW_LABEL[v] : `+ ${VIEW_LABEL[v]}`);
     }));
     const rv = this.rigView();
     const turned = this.view === 'side' || this.view === 'quarter';
@@ -530,7 +585,7 @@ export class CharactersView {
               h('p', { class: 'muted small' }, `Put ${selected.name} on a corner, edge or the centre of its layer. While dragging, nodes snap to these points on their layer and the one above (hold Alt to place freely).`))
           : h('p', { class: 'muted small' }, selected ? `${selected.name} has no layer yet: attach one to snap to it.` : 'Pick a node to snap it to a corner, edge or the centre of its layer.')),
       h('section', {},
-        h('h2', {}, 'Layers'),
+        h('h2', {}, 'Layers', h('button', { class: 'chars-mini', id: 'open-matcher', onclick: () => this.openMatcher(this.view) }, 'Match on figure')),
         h('ul', { class: 'chars-layers' }, layers.map(([name, p]) => h('li', {},
           h('button', {
             'data-layer': name, class: name === this.selLayer ? 'sel' : '', 'aria-pressed': String(name === this.selLayer),
