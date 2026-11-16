@@ -31,7 +31,8 @@ export interface AnimateContext {
   rigOf: (character: string) => Rig | null;
   onChanged: () => void;
   /** Go to the Rig tab (to add someone to the scene). */
-  toRig: () => void;
+  /** Go to the Rig tab, on this character. */
+  toRig: (character?: string) => void;
 }
 
 type Sel =
@@ -350,6 +351,7 @@ export class AnimateView {
     });
   }
   private lastCast: string | null = null;
+  private lastLaneClick: { key: string; t: number } | null = null;
 
   // --- drawing -------------------------------------------------------------------------------
   render() {
@@ -688,6 +690,14 @@ export class AnimateView {
       this.render();
     };
     canvas.addEventListener('pointerup', end);
+    // Double-click a character: open its rig.
+    canvas.addEventListener('dblclick', (e) => {
+      const r = canvas.getBoundingClientRect(), world = this.stage.screenToWorld({ x: e.clientX - r.left, y: e.clientY - r.top });
+      const order = (this.p.cast ?? []).map((c) => ({ id: c.id, rig: this.rigOfCast(c.id)! })).filter((a) => a.rig);
+      const hit = this.stage.hitActor(order, world);
+      const c = hit && this.castOf(hit.id);
+      if (c) this.ctx.toRig(c.character);
+    });
     canvas.addEventListener('pointercancel', end);
     // Drop images straight onto the canvas.
     this.stageHost.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); this.stageHost.classList.add('drop-over'); } });
@@ -787,7 +797,7 @@ export class AnimateView {
 
   /** A lane's name: click to pick it; drag it up or down to change what is in front. */
   private laneName(entry: StackEntry, idx: number, label: string, count: string, on: boolean): HTMLElement {
-    const el = h('div', { class: 'nm' + (on ? ' on' : ''), 'data-stack': `${entry.kind}:${entry.id}`, title: 'Drag up or down to change what is in front' },
+    const el = h('div', { class: 'nm' + (on ? ' on' : ''), 'data-stack': `${entry.kind}:${entry.id}`, title: entry.kind === 'cast' ? 'Drag up or down to change what is in front. Double-click to open its rig.' : 'Drag up or down to change what is in front' },
       h('span', { class: 'px' }, label), h('span', { class: 'px c' }, count));
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
@@ -799,6 +809,16 @@ export class AnimateView {
         el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up);
         el.style.transform = ''; el.classList.remove('lifted');
         if (!moved) {
+          // Two clicks in a row on a character's name: open its rig. (The first click redraws the timeline, so a
+          // plain dblclick event would never arrive.)
+          const now = performance.now(), key = `${entry.kind}:${entry.id}`;
+          if (entry.kind === 'cast' && this.lastLaneClick?.key === key && now - this.lastLaneClick.t < 450) {
+            this.lastLaneClick = null;
+            const c = this.castOf(entry.id);
+            if (c) this.ctx.toRig(c.character);
+            return;
+          }
+          this.lastLaneClick = { key, t: now };
           this.sel = entry.kind === 'image' ? { kind: 'image', id: entry.id } : (this.laneOf(entry.id).poses.length ? { kind: 'pose', cast: entry.id, i: this.poseAt(entry.id, this.t) } : { kind: 'lane', cast: entry.id });
           this.render();
           return;

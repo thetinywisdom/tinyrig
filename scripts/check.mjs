@@ -358,6 +358,17 @@ if (want('act')) {
   await page.keyboard.press('Control+z');
   await page.screenshot({ path: `${out}/act-layers.png` });
 
+  // Double-click a character's lane (or the character on the canvas): its rig opens.
+  await page.dblclick('.tl [data-stack^="cast"]');
+  await page.waitForSelector('.chars-tweak');
+  ok('double-clicking a character opens the Rig tab on that character', await page.locator('[data-tab="rig"].on').count() === 1 && /placeholder/i.test(await page.textContent('.chars-who.sel')));
+  await page.click('[data-tab="animate"]');
+  await page.waitForSelector('.tl');
+  const cpos = await ev(() => { const a = window.__anim, c = a.p.cast[0], b = a.stage.actor({ id: c.id, rig: a.ctx.rigOf(c.character) }).bounds(); return a.stage.worldToScreen({ x: b.x + b.w / 2, y: b.y + b.h * 0.3 }); });
+  const cbox = await page.locator('.anim-stage canvas').boundingBox();
+  await page.mouse.dblclick(cbox.x + cpos.x, cbox.y + cpos.y);
+  await page.waitForSelector('.chars-tweak');
+  ok('double-clicking the character on the canvas does too', await page.locator('[data-tab="rig"].on').count() === 1);
   // Rig tab: a change here stays in this scene until you save it to the shared rig.
   await page.click('[data-tab="rig"]');
   await page.waitForSelector('.chars-tweak');
@@ -372,6 +383,11 @@ if (want('act')) {
   await page.screenshot({ path: `${out}/scene-rig.png` });
   await page.click('#rig-reset');
   ok('Reset to shared drops the scene copy', await ev(() => !Object.keys(window.__project().storyboard.panels[0].rigs ?? {}).length));
+  // Delete the character: it leaves the cast and the scene; Undo brings both back.
+  await page.click('#char-delete');
+  ok('Delete removes the character from the cast and the scene', await ev(() => window.__project().characters.length === 0 && !window.__project().storyboard.panels[0].cast.length));
+  await page.click('#toast-undo');
+  ok('Undo brings the character and its poses back', await ev(() => window.__project().characters.length === 1 && Object.values(window.__project().storyboard.panels[0].lanes)[0].poses.length >= 3));
   await page.click('[data-tab="animate"]');
 
   // Back on the storyboard: the project size, and the scene's picture is what its camera sees first.

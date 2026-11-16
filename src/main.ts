@@ -77,7 +77,7 @@ function showScene(panel: Panel, tab: SceneTab = 'animate') {
   close();
   remember(`panel:${panel.id}:${tab}`);
   const view = new SceneView(app, {
-    project, panel, tab, onChanged: save, saveState,
+    project, panel, tab, onChanged: save, saveState, deleteCharacter,
     back: () => showStoryboard(),
     open: (p, t) => showScene(p, t),
     importCharacter: () => { returnTo = panel; showImporter(); },
@@ -87,12 +87,38 @@ function showScene(panel: Panel, tab: SceneTab = 'animate') {
 }
 const showAct = (panel: Panel) => showScene(panel, 'animate');
 
+/** Delete a character from the cast and every scene. Returns a function that puts everything back. */
+function deleteCharacter(name: string): (() => void) | null {
+  const at = project.characters.findIndex((c) => c.name === name);
+  if (at < 0) return null;
+  const entry = project.characters[at];
+  const panels = project.storyboard?.panels ?? [];
+  const before = panels.map((p) => JSON.stringify({ cast: p.cast, lanes: p.lanes, stack: p.stack, rigs: p.rigs }));
+  project.characters.splice(at, 1);
+  for (const p of panels) {
+    const gone = new Set((p.cast ?? []).filter((c) => c.character === name).map((c) => c.id));
+    if (!gone.size && !p.rigs?.[name]) continue;
+    p.cast = (p.cast ?? []).filter((c) => !gone.has(c.id));
+    for (const id of gone) delete p.lanes?.[id];
+    p.stack = p.stack?.filter((e) => !(e.kind === 'cast' && gone.has(e.id)));
+    if (p.rigs) delete p.rigs[name];
+  }
+  pictures.forget(name);
+  save();
+  return () => {
+    project.characters.splice(Math.min(at, project.characters.length), 0, entry);
+    panels.forEach((p, i) => { const v = JSON.parse(before[i]); for (const k of ['cast', 'lanes', 'stack', 'rigs'] as const) { if (v[k] === undefined) delete p[k]; else (p as unknown as Record<string, unknown>)[k] = v[k]; } });
+    pictures.forget(name);
+    save();
+  };
+}
+
 function showCharacters(show?: string) {
   close();
   remember('characters');
   const back = returnTo;
   const view = new CharactersView(app, {
-    project, onChanged: save, show,
+    project, onChanged: save, show, deleteCharacter,
     back: () => (back && project.storyboard?.panels.includes(back) ? showScene(back, 'rig') : showStoryboard()),
     importCharacter: showImporter,
   });

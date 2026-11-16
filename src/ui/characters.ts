@@ -30,6 +30,8 @@ export interface CharactersContext {
    * (Reset to shared drops it; Save to shared copies it over the shared rig).
    */
   scene?: { panel: Panel; addCast: (name: string) => void; removeCast: (name: string) => void };
+  /** Delete a character from the project (every scene too); returns a function that undoes it. */
+  deleteCharacter?: (name: string) => (() => void) | null;
 }
 
 const PROPER_NAME: Record<ViewId, string> = { front: 'front', quarter: 'three_quarter', side: 'side', back: 'back' };
@@ -149,6 +151,24 @@ export class CharactersView {
   }
 
   /** Drop this scene's copy: the character goes back to the shared rig. Undo brings the copy back. */
+  private toastEl = h('div', { class: 'toast', role: 'status', hidden: true });
+  private toastTimer = 0;
+  private toast(text: string, undo?: () => void) {
+    clearTimeout(this.toastTimer);
+    this.toastEl.replaceChildren(h('span', {}, text), ...(undo ? [h('button', { class: 'link', id: 'toast-undo', onclick: () => { this.toastEl.hidden = true; undo(); } }, 'Undo')] : []));
+    this.toastEl.hidden = false;
+    if (!this.toastEl.isConnected) this.root.append(this.toastEl);
+    this.toastTimer = window.setTimeout(() => { this.toastEl.hidden = true; }, 8000);
+  }
+  private deleteCharacter(name: string) {
+    const undo = this.ctx.deleteCharacter?.(name);
+    if (!undo) return;
+    this.name = null; this.selNode = this.selLayer = null; this.trial = null; this.note = '';
+    this.loaded.delete(name);
+    this.render(); this.draw(true);
+    this.toast(`Deleted ${name}.`, () => { undo(); this.name = name; this.pickFirstView(); this.render(); this.draw(true); });
+  }
+
   // --- snapping ------------------------------------------------------------------------------
   /** Snap nodes to the 9 points of their layers while dragging. Remembered in this browser. */
   private snapOn = (() => { try { return localStorage.getItem('rig.snap') !== 'off'; } catch { return true; } })();
@@ -450,7 +470,10 @@ export class CharactersView {
       this.tweaked(name) ? h('div', { class: 'act-bar' },
         h('button', { id: 'rig-reset', onclick: () => this.resetToShared() }, 'Reset to shared'),
         h('button', { id: 'rig-save-shared', class: 'primary', onclick: () => this.saveToShared() }, 'Save to shared')) : null,
-      h('button', { class: 'link', id: 'rig-remove-cast', onclick: () => sc.removeCast(name) }, `Take ${name} out of this scene`)) : null;
+      h('div', { class: 'act-bar' }, h('button', { id: 'rig-remove-cast', onclick: () => sc.removeCast(name) }, 'Remove from this scene'))) : null;
+    const danger = this.ctx.deleteCharacter ? h('section', { class: 'chars-danger' },
+      h('button', { id: 'char-delete', onclick: () => this.deleteCharacter(name) }, `Delete ${name}`),
+      h('p', { class: 'muted small' }, sc ? 'Deletes it from the cast and every scene. Undo brings it back.' : 'Deletes it from the cast and from every scene it is in. Undo brings it back.')) : null;
     this.side.replaceChildren(...[tweak,
       h('section', {},
         h('h2', {}, 'Rig', h('span', { class: 'muted' }, RIG_KIND_LABEL[kind ?? 'human'])),
@@ -516,6 +539,7 @@ export class CharactersView {
           h('b', {}, displayName(name)),
           h('span', { class: 'muted' }, `→ ${num(p.bone)} ${this.nodeName(p.bone)}`))))),
         h('p', { class: 'muted small' }, 'Name a layer and a node the same, and they attach by themselves.')),
+      danger,
     ].filter((n): n is HTMLElement => !!n));
   }
 

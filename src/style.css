@@ -515,3 +515,6 @@ button.rec.on, button.rec:active { background: var(--accent); }
 .snap-row .small { margin: 0; }
 .chars-marks .snap { fill: var(--paper); stroke: var(--accent); stroke-width: 1.2; }
 .chars-marks .snap.on { fill: var(--accent); }
+.chars-danger { background: transparent !important; border-style: dashed !important; }
+.chars-danger button { align-self: flex-start; }
+.chars-danger button:hover:not(:disabled) { background: var(--accent); }

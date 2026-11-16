@@ -21,6 +21,8 @@ export interface SceneContext {
   open: (panel: Panel, tab: SceneTab) => void;
   importCharacter: () => void;
   saveState: () => string;
+  /** Delete a character from the project; returns a function that undoes it. */
+  deleteCharacter: (name: string) => (() => void) | null;
 }
 
 const ICON_GRID = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/></svg>';
@@ -46,7 +48,7 @@ export class SceneView {
   }
   private changed = () => { pictures.forget(''); this.ctx.onChanged(); this.renderHead(); };
 
-  private show(tab: SceneTab) {
+  private show(tab: SceneTab, focus?: string) {
     this.tabView?.dispose();
     this.animate = null;
     this.ctx.tab = tab;
@@ -55,7 +57,8 @@ export class SceneView {
     if (tab === 'rig') {
       this.tabView = new CharactersView(host, {
         project: this.ctx.project, onChanged: this.changed, back: this.ctx.back, importCharacter: this.ctx.importCharacter,
-        show: this.p.cast?.[0]?.character,
+        show: focus ?? this.p.cast?.[0]?.character,
+        deleteCharacter: this.ctx.deleteCharacter,
         scene: {
           panel: this.p,
           addCast: (name) => { const rig = this.rigOf(name); if (rig) { addCast(this.p, name, rig, this.size()); this.changed(); } },
@@ -74,7 +77,7 @@ export class SceneView {
     } else {
       const view = new AnimateView(host, {
         project: this.ctx.project, panel: this.p, size: () => this.size(), rigOf: (n) => this.rigOf(n),
-        onChanged: this.changed, toRig: () => this.ctx.open(this.p, 'rig'),
+        onChanged: this.changed, toRig: (name) => this.show('rig', name),
       });
       view.onPlayChange = () => this.renderHead();
       this.animate = view;
