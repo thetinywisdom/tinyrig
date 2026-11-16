@@ -110,7 +110,11 @@ export function buildRig(imp: ImportResult): { rig: Rig; issues: Issue[] } {
   // Mostly names of your own: a creature or something else. Start from the rig its layer names fit best.
   const names = [...new Set(VIEWS.flatMap((v) => (imp.views[v] ?? []).map((p) => p.name)))];
   const creature = fitKind(names, ['two', 'four']);
-  if (creature.score > names.filter((n) => PIECES[n]).length) applyKind(rig, imp, creature.kind, 'high');
+  const human = names.filter((n) => PIECES[n]).length;
+  if (creature.score > human) applyKind(rig, imp, creature.kind, 'high');
+  // Nothing named like a body part (numbered layers, or names of your own): start from the human rig, and you
+  // attach each layer to its node in Rig.
+  else if (!human) applyKind(rig, imp, 'human', 'high');
   return { rig, issues };
 }
 

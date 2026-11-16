@@ -2,11 +2,12 @@
 // rig level, read the check report. Also shows the naming convention.
 import { buildRig, levelIssues } from '../import/build';
 import { importPsd } from '../import/psd';
-import { importSvg, importSvgParts } from '../import/svg';
+import { importSvg, importSvgParts, viewOfFile } from '../import/svg';
 import { parsePartFileName, type RigLevel } from '../model/skeleton';
 import type { ImportResult, Issue, Rig } from '../model/types';
 import { h } from './dom';
 import { RIG_KIND_LABEL } from '../model/rig';
+import { mountMatcher, unplacedLayers } from './matcher';
 
 export interface Imported { imp: ImportResult; rig: Rig; issues: Issue[] }
 export type ImportMode = 'whole' | 'parts';
@@ -29,6 +30,8 @@ const PLACEHOLDERS: { label: string; mode: ImportMode; files: string[] }[] = [
 export function guessMode(files: InFile[]): ImportMode {
   const svgs = files.filter((f) => /\.svg$/i.test(f.name));
   if (files.some((f) => /\.psd$/i.test(f.name))) return 'whole';
+  // Several SVGs named after angles (momo_front.svg, momo_side.svg) are one character, one file per angle.
+  if (svgs.length > 1 && svgs.every((f) => viewOfFile(f.name) && !parsePartFileName(f.name).piece)) return 'whole';
   return svgs.length > 1 || (svgs.length === 1 && !!parsePartFileName(svgs[0].name).piece) ? 'parts' : 'whole';
 }
 
@@ -44,9 +47,17 @@ export async function readFiles(
     imp = await importSvgParts(svgs.map((f) => ({ name: f.name, text: text(f) })), onProgress);
   } else if (psds.length) imp = await importPsd(psds, onProgress);
   else if (svgs.length) {
+    // One SVG per angle (momo_front.svg, momo_side.svg) is one character: each file fills its angle.
     imp = await importSvg(text(svgs[0]), svgs[0].name, wanted, onProgress);
-    if (svgs.length > 1) {
-      imp.issues.push({ severity: 'warn', text: `Only ${svgs[0].name} was read. Put every piece in one SVG as named layers.` });
+    for (const f of svgs.slice(1)) {
+      const more = await importSvg(text(f), f.name, wanted, onProgress);
+      for (const [v, pieces] of Object.entries(more.views)) {
+        const view = v as keyof typeof imp.views;
+        if (imp.views[view]?.length) imp.issues.push({ severity: 'warn', text: `${f.name} and another file both hold the ${view} view; the first one is used. Name each file after its angle: momo_front.svg, momo_side.svg.` });
+        else imp.views[view] = pieces;
+      }
+      imp.issues.push(...more.issues);
+      imp.fileNames.push(...more.fileNames.filter((n) => !imp.fileNames.includes(n)));
     }
   } else throw new Error('Choose an SVG file, or the PSD files of one character.');
   const { rig, issues } = buildRig(imp);
@@ -144,6 +155,10 @@ export function mountImporter(
     // A rig of its own (a creature) has no human parts to check for.
     const found = [...(rig.nodes ? [] : levelIssues(rig, rig.level)), ...issues];
     showNaming(found.some((i) => i.severity === 'error' || i.severity === 'warn'));
+    // Layers the app could not place by name: drag them onto nodes here, before the character opens.
+    const matchBox = h('section', { class: 'matcher', id: 'matcher' });
+    const waiting = unplacedLayers(imp, rig).length;
+    if (waiting) mountMatcher(matchBox, imp, rig, () => undefined);
 
     review.replaceChildren(...[
       h('h2', {}, imp.name),
@@ -155,6 +170,7 @@ export function mountImporter(
       rig.nodes
         ? h('p', { class: 'level' }, h('strong', {}, `${RIG_KIND_LABEL[rig.kind ?? 'four']} rig. `), 'Layers named like a node move with it. Check the nodes in Characters.')
         : h('p', { class: 'level' }, h('strong', {}, `${level.title} rig. `), `${level.bends}. Worked out from the pieces found.`),
+      waiting ? matchBox : null,
       h('h3', {}, 'Check report'),
       issueList(found),
       h('button', { class: 'primary', id: 'open-editor', onclick: () => onDone(current!, files, mode) }, 'Open in editor'),

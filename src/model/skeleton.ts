@@ -192,9 +192,52 @@ export type NameKind =
   | { kind: 'group'; name: string }
   | { kind: 'unknown'; name: string };
 
+// ---------------------------------------------------------------------------
+// Part names written any way an artist might: "Arm L", "L Arm", "Left Arm", "ArmLeft", "upper arm R",
+// "lower leg L", "Calf_R", "Body". All read as the piece they mean (arm_L, upperarm_L, shin_L, torso…).
+
+const SIDE_WORD: Record<string, Side> = { l: 'L', left: 'L', lft: 'L', r: 'R', right: 'R', rgt: 'R', rt: 'R' };
+const PART_WORDS: [string[], string][] = [
+  [['head', 'face'], 'head'],
+  [['hair back', 'back hair', 'hairback'], 'hair_back'],
+  [['body', 'torso', 'trunk'], 'torso'],
+  [['chest', 'upper body', 'upperbody', 'ribcage', 'ribs', 'bust'], 'chest'],
+  [['pelvis', 'hips', 'hip', 'waist', 'lower body', 'lowerbody', 'butt'], 'pelvis'],
+  [['upper arm', 'upperarm', 'arm upper', 'bicep', 'biceps'], 'upperarm'],
+  [['forearm', 'fore arm', 'lower arm', 'lowerarm', 'arm lower'], 'forearm'],
+  [['hand', 'fist', 'palm'], 'hand'],
+  [['arm'], 'arm'],
+  [['thigh', 'upper leg', 'upperleg', 'leg upper'], 'thigh'],
+  [['shin', 'lower leg', 'lowerleg', 'leg lower', 'calf'], 'shin'],
+  [['foot', 'feet', 'shoe', 'boot'], 'foot'],
+  [['leg'], 'leg'],
+];
+const SIDED = new Set(['upperarm', 'forearm', 'hand', 'arm', 'thigh', 'shin', 'foot', 'leg']);
+
+/** The piece a name means, however it is written, or null. */
+export function canonicalPart(raw: string): string | null {
+  const words = raw.trim().replace(/_x([0-9A-Fa-f]{2,4})_/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d)/g, '$1 $2')
+    .toLowerCase().split(/[\s_\-.]+/).filter(Boolean)
+    .filter((w, i, all) => !(/^\d+$/.test(w) && i === all.length - 1)); // copies: Arm L 2
+  let side: Side | null = null;
+  const rest: string[] = [];
+  for (const w of words) { if (!side && SIDE_WORD[w]) side = SIDE_WORD[w]; else rest.push(w); }
+  if (!rest.length) return null;
+  const phrase = rest.join(' '), glued = rest.join('');
+  for (const [names, part] of PART_WORDS) {
+    if (!names.some((n) => n === phrase || n.replace(/ /g, '') === glued)) continue;
+    if (SIDED.has(part)) return side ? `${part}_${side}` : null;
+    return side ? null : part;
+  }
+  return null;
+}
+
 export function classifyName(raw: string): NameKind {
   const name = normalizeName(raw);
   if (PIECES[name]) return { kind: 'piece', name, variant: false };
+  const canon = canonicalPart(raw);
+  if (canon && PIECES[canon]) return { kind: 'piece', name: canon, variant: false };
   const char = /^char_(.+)$/.exec(name);
   if (char) return { kind: 'char', name: char[1] };
   const view = viewFromName(name);

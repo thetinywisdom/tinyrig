@@ -480,3 +480,38 @@ button.rec.on, button.rec:active { background: var(--accent); }
 /* A recorded every-frame block: lines like a film strip. */
 .tl .blk.rec { background: var(--ink) repeating-linear-gradient(90deg, transparent 0 5px, rgba(233, 233, 229, 0.35) 5px 6px); }
 .tl .blk.rec.on { background: var(--accent) repeating-linear-gradient(90deg, transparent 0 5px, rgba(17, 17, 17, 0.35) 5px 6px); }
+
+/* Match your layers (import) */
+.matcher { margin: 18px 0; padding: 14px; border: 1px solid var(--ink); border-radius: var(--r); background: var(--paper); display: flex; flex-direction: column; gap: 10px; }
+.mt-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mt-head h3 { margin: 0; color: var(--ink); }
+.mt-body { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr; gap: 12px; align-items: start; }
+.mt-waiting { display: flex; flex-wrap: wrap; gap: 6px; align-content: start; min-height: 90px; padding: 8px; border: 1px dashed var(--ink); border-radius: var(--r-s); }
+.mt-layer { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 84px; padding: 6px 4px; font-size: 11.5px; cursor: grab; background: var(--tile); }
+.mt-layer span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-layer.sel { box-shadow: 0 0 0 2px var(--accent); }
+.mt-layer.dragging { opacity: 0.4; }
+.mt-thumb { width: 64px; height: 64px; background: #fff; border: 1px solid var(--hair); border-radius: 4px; }
+.mt-nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.mt-slot { min-height: 64px; padding: 6px; border: 1px solid var(--ink); border-radius: var(--r-s); background: var(--tile); display: flex; flex-direction: column; gap: 4px; }
+.mt-slot.target { cursor: pointer; border-style: dashed; }
+.mt-slot.over { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
+.mt-on { display: flex; flex-wrap: wrap; gap: 4px; }
+.mt-on .mt-layer { width: 56px; padding: 3px; font-size: 10px; }
+.mt-on .mt-thumb { width: 40px; height: 40px; }
+.mt-new { border-style: dashed; justify-content: center; align-items: center; text-align: center; }
+
+/* Snap: a 3 × 3 picker, like an alignment control */
+.chars-snap .snap-toggle { display: inline-flex; align-items: center; gap: 6px; text-transform: none; cursor: pointer; }
+.chars-snap .snap-toggle input { accent-color: var(--accent); margin: 0; }
+.snap-row { display: flex; gap: 12px; align-items: center; }
+.snap-grid { flex: none; display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 30px); padding: 6px; background: var(--paper); border: 1px solid var(--hair); border-radius: 12px; }
+.snap-grid:focus-within, .snap-grid:has(.on) { border-color: var(--accent); }
+.snap-cell { display: grid; place-items: center; border: 0; background: none; padding: 0; border-radius: 8px; }
+.snap-cell i { width: 4px; height: 4px; border-radius: 50%; background: #9a9a95; transition: transform 120ms var(--ease-out), background-color 120ms ease; }
+@media (hover: hover) and (pointer: fine) { .snap-cell:hover i { background: var(--ink); transform: scale(1.6); } }
+.snap-cell.on i { width: 16px; height: 10px; border-radius: 0; transform: none;
+  background: linear-gradient(var(--accent) 0 2px, transparent 2px 4px, var(--accent) 4px 6px, transparent 6px 8px, var(--accent) 8px 10px) center / 16px 10px no-repeat; }
+.snap-row .small { margin: 0; }
+.chars-marks .snap { fill: var(--paper); stroke: var(--accent); stroke-width: 1.2; }
+.chars-marks .snap.on { fill: var(--accent); }

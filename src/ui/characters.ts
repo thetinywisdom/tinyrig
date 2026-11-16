@@ -57,6 +57,8 @@ export class CharactersView {
   private adding = false;
   /** The node under the pointer: its name always shows. */
   private hover: string | null = null;
+  /** The snap point the dragged node sits on, drawn while dragging. */
+  private snapping: Pt | null = null;
   private note = '';
   private undo: { name: string; rig: string; copy?: boolean; had?: boolean }[] = [];
   private root = h('div', { class: 'chars' });
@@ -147,6 +149,55 @@ export class CharactersView {
   }
 
   /** Drop this scene's copy: the character goes back to the shared rig. Undo brings the copy back. */
+  // --- snapping ------------------------------------------------------------------------------
+  /** Snap nodes to the 9 points of their layers while dragging. Remembered in this browser. */
+  private snapOn = (() => { try { return localStorage.getItem('rig.snap') !== 'off'; } catch { return true; } })();
+  private setSnap(on: boolean) { this.snapOn = on; try { localStorage.setItem('rig.snap', on ? 'on' : 'off'); } catch { /* storage off */ } this.render(); }
+  /** The box around the layers a part's node moves, in this angle (rest pose, so stage units). */
+  private layerBox(bone: string) {
+    const rv = this.rigView();
+    const boxes = rv ? Object.values(rv.pieces).filter((p) => p.bone === bone && !p.variant && !p.shared).map((p) => p.bbox) : [];
+    if (!boxes.length) return null;
+    const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
+    const x1 = Math.max(...boxes.map((b) => b.x + b.w)), y1 = Math.max(...boxes.map((b) => b.y + b.h));
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  /** The 9 snap points of a box: corners, edge middles and the centre, row by row from the top left. */
+  private anchors(b: { x: number; y: number; w: number; h: number }): Pt[] {
+    const out: Pt[] = [];
+    for (const fy of [0, 0.5, 1]) for (const fx of [0, 0.5, 1]) out.push({ x: b.x + b.w * fx, y: b.y + b.h * fy });
+    return out;
+  }
+  /** Snap points near a node: its own layers' and the layers of the node it moves with. */
+  private snapPoints(n: RigNode): Pt[] {
+    const out: Pt[] = [];
+    for (const bone of [n.bone, n.parent].filter(Boolean) as string[]) { const b = this.layerBox(bone); if (b) out.push(...this.anchors(b)); }
+    return out;
+  }
+  /** Put the selected node on one of its layer's 9 points. */
+  private snapTo(index: number) {
+    const n = this.nodes().find((x) => x.id === this.selNode);
+    const box = n && this.layerBox(n.bone);
+    if (!n || !box) return;
+    const rig = this.begin(), rv = this.rigView();
+    if (!rig || !rv) return;
+    const at = this.anchors(box)[index];
+    if (!n.parent) rv.rootPivot = { ...at };
+    else {
+      rv.pivots[n.id] = { ...at };
+      const limb = LIMBS.find((l) => l.end === n.id);
+      if (limb) rv.tips[limb.id] = { ...at };
+    }
+    this.changed();
+  }
+  /** Which of the 9 points the node sits on now, if any. */
+  private snappedIndex(n: RigNode): number {
+    const rv = this.rigView(), box = this.layerBox(n.bone);
+    const at = n.parent ? rv?.pivots[n.id] : rv?.rootPivot;
+    if (!box || !at) return -1;
+    return this.anchors(box).findIndex((a) => Math.hypot(a.x - at.x, a.y - at.y) < 0.5);
+  }
+
   private resetToShared() {
     const sc = this.ctx.scene, name = this.name;
     if (!sc || !name || !this.tweaked(name)) return;
@@ -444,6 +495,17 @@ export class CharactersView {
           n.parent ? h('button', { class: 'icon', title: `Remove ${n.name}`, 'aria-label': `Remove ${n.name}`, onclick: () => this.remove(n.id) }, '×') : null);
         })),
         selected && selected.parent ? h('p', { class: 'muted small' }, 'Delete removes it. Its parts then move with the node above it.') : null),
+      h('section', { class: 'chars-snap' },
+        h('h2', {}, 'Snap', h('label', { class: 'snap-toggle' }, h('input', { type: 'checkbox', id: 'snap-on', checked: this.snapOn, onchange: (e: Event) => this.setSnap((e.target as HTMLInputElement).checked) }), h('span', { class: 'px' }, 'while dragging'))),
+        selected && this.layerBox(selected.bone)
+          ? h('div', { class: 'snap-row' },
+              h('div', { class: 'snap-grid', role: 'group', 'aria-label': `Snap ${selected.name} to its layer` }, [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => {
+                const on = this.snappedIndex(selected) === i;
+                const label = ['top left', 'top', 'top right', 'left', 'centre', 'right', 'bottom left', 'bottom', 'bottom right'][i];
+                return h('button', { class: 'snap-cell' + (on ? ' on' : ''), 'data-snap': i, 'aria-pressed': String(on), title: `${selected.name} to the ${label} of its layer`, 'aria-label': label, onclick: () => this.snapTo(i) }, h('i', {}));
+              })),
+              h('p', { class: 'muted small' }, `Put ${selected.name} on a corner, edge or the centre of its layer. While dragging, nodes snap to these points on their layer and the one above (hold Alt to place freely).`))
+          : h('p', { class: 'muted small' }, selected ? `${selected.name} has no layer yet: attach one to snap to it.` : 'Pick a node to snap it to a corner, edge or the centre of its layer.')),
       h('section', {},
         h('h2', {}, 'Layers'),
         h('ul', { class: 'chars-layers' }, layers.map(([name, p]) => h('li', {},
@@ -528,6 +590,13 @@ export class CharactersView {
         break;
       }
     }
+    if (drag && this.snapOn) {
+      const n = this.nodes().find((x) => x.id === drag.id);
+      for (const a of n ? this.snapPoints(n) : []) {
+        const sp = this.stage.worldToScreen(a), on = this.snapping && Math.hypot(a.x - this.snapping.x, a.y - this.snapping.y) < 0.5;
+        out.push(el('rect', { class: 'snap' + (on ? ' on' : ''), x: sp.x - 3, y: sp.y - 3, width: 6, height: 6 }));
+      }
+    }
     this.marks.replaceChildren(...out, ...labels);
   }
 
@@ -600,12 +669,23 @@ export class CharactersView {
         if (!drag.moved) { this.begin(); drag.moved = true; rv = this.rigView()!; }
         const n = this.nodes().find((x) => x.id === drag.id)!;
         drag.over = this.dotAt(screen, drag.id)?.node.id ?? null;
+        // Snap to the nearest of the layers' 9 points when it is close (hold Alt to place freely).
+        let to = world;
+        if (this.snapOn && !e.altKey && !drag.over) {
+          let best = 12;
+          for (const a of this.snapPoints(n)) {
+            const sp = this.stage.worldToScreen(a), d = Math.hypot(sp.x - screen.x, sp.y - screen.y);
+            if (d < best) { best = d; to = { ...a }; }
+          }
+        }
+        this.snapping = to !== world ? to : null;
+        const world2 = to;
         // The drawing stands at rest, so the stage point is the node's point.
-        if (!n.parent) rv.rootPivot = world;
+        if (!n.parent) rv.rootPivot = world2;
         else {
-          rv.pivots[n.id] = world;
+          rv.pivots[n.id] = world2;
           const limb = LIMBS.find((l) => l.end === n.id);
-          if (limb) rv.tips[limb.id] = { ...world };
+          if (limb) rv.tips[limb.id] = { ...world2 };
         }
       } else if (drag.kind === 'part') {
         if (Math.hypot(screen.x - drag.start.x, screen.y - drag.start.y) < 4) return;
@@ -635,6 +715,7 @@ export class CharactersView {
       const drag = this.drag, rv = this.rigView();
       if (!drag) return;
       this.drag = null;
+      this.snapping = null;
       if (drag.kind === 'part') {
         // A click on a part picks its layer; then a click on a node attaches it.
         this.selLayer = this.selLayer === drag.piece ? null : drag.piece;

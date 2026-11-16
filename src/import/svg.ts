@@ -1,7 +1,7 @@
 // SVG importer (Illustrator, Figma, Affinity Designer, Penpot).
 // Reads piece names, not folder nesting, then renders each piece to a line
 // image and a fill image using the browser's own SVG engine.
-import { classifyName, defaultPartOrder, GROUP_OR_PIECE, parsePartFileName, parseVariant, type ViewId } from '../model/skeleton';
+import { classifyName, defaultPartOrder, GROUP_OR_PIECE, parsePartFileName, parseVariant, viewFromName, type ViewId } from '../model/skeleton';
 import type { ImportResult, Issue, PieceRaster, Rect } from '../model/types';
 import { buildMask, makeCanvas, splitPasses } from './raster';
 
@@ -21,31 +21,34 @@ interface Scan {
 }
 
 function nameOf(el: Element): string | null {
-  // Newer Illustrator exports keep the real layer name in data-name when it had to change the id.
-  return el.getAttribute('data-name') || el.getAttribute('id');
+  // Where apps keep a layer's name: Illustrator's data-name (when it had to change the id), Inkscape's label,
+  // Affinity's serif:id, then the plain id (Figma, Illustrator, Penpot).
+  return el.getAttribute('data-name') || el.getAttribute('inkscape:label') || el.getAttributeNS('http://www.inkscape.org/namespaces/inkscape', 'label')
+    || el.getAttribute('serif:id') || el.getAttributeNS('http://www.serif.com/', 'id') || el.getAttribute('id');
 }
+const NAMED = '[id], [data-name], [inkscape\\:label], [serif\\:id]';
 
 function containsPiece(el: Element): boolean {
-  for (const d of el.querySelectorAll('[id], [data-name]')) {
+  for (const d of el.querySelectorAll(NAMED)) {
     if (classifyName(nameOf(d)!).kind === 'piece') return true;
   }
   return false;
 }
 
-/** Names apps give objects nobody named: path123, Vector, Layer_1, Rectangle 2. */
-const AUTO_NAME = /^(path|rect|rectangle|circle|ellipse|polygon|polyline|line|vector|group|layer|g|svg|clip|mask|artboard|frame|union|subtract|intersect|exclude|shape|image|object|compound|use)\w*$/;
+/** Names apps give objects nobody named: path123, Vector, Layer_1, Rectangle 2, g12, svg_3. (Numbers are already gone.) */
+const AUTO_NAME = /^(path|rect|rectangle|circle|ellipse|polygon|polyline|line|vector|group|layer|g|svg|clip|clip_path|clippath|mask|artboard|frame|union|subtract|intersect|exclude|shape|image|object|compound|use|defs|text|tspan|stroke|fill|outline|color)$|^(path|g|rect|svg|layer|group|ellipse|circle)\d+$/;
 /** Layers that are not part of a character. */
 const IGNORED = /^(background|bg|sketch|rough|guides?|ref|reference|notes?)(_|$)/;
 
 function containsNamed(el: Element): boolean {
-  for (const d of el.querySelectorAll('[id], [data-name]')) {
+  for (const d of el.querySelectorAll(NAMED)) {
     const c = classifyName(nameOf(d)!);
     if (c.kind !== 'unknown' || (!AUTO_NAME.test(c.name) && !IGNORED.test(c.name))) return true;
   }
   return false;
 }
 
-function scan(root: SVGSVGElement, fallbackName: string): Scan {
+function scan(root: SVGSVGElement, fallbackName: string, fileView: ViewId | null = null): Scan {
   const chars: Scan['chars'] = new Map();
   const issues: Issue[] = [];
   const unknown = new Set<string>(), dupes = new Set<string>();
@@ -73,15 +76,15 @@ function scan(root: SVGSVGElement, fallbackName: string): Scan {
       else if (c.kind === 'piece') {
         if (GROUP_OR_PIECE.has(c.name) && containsPiece(child)) walk(child, char, view);
         else if (c.variant && !view) shared.push({ char: char ?? fallbackName, name: c.name, el: child });
-        else add(char ?? fallbackName, view ?? 'front', c.name, child);
+        else add(char ?? fallbackName, view ?? fileView ?? 'front', c.name, child);
       } else if (AUTO_NAME.test(c.name) || IGNORED.test(c.name) || (hasChars && !char)) {
         if (child.children.length) walk(child, char, view);
       } else if (containsNamed(child)) walk(child, char, view); // a folder of your own
       // Any other name is a part of your own (a tail, an ear, a prop): a node with the same name moves it.
-      else add(char ?? fallbackName, view ?? 'front', c.name, child);
+      else add(char ?? fallbackName, view ?? fileView ?? 'front', c.name, child);
     }
   };
-  const hasChars = [...root.querySelectorAll('[id], [data-name]')].some((d) => classifyName(nameOf(d)!).kind === 'char');
+  const hasChars = [...root.querySelectorAll(NAMED)].some((d) => classifyName(nameOf(d)!).kind === 'char');
   walk(root, null, null);
   for (const v of shared) {
     const views = chars.get(v.char);
@@ -89,9 +92,35 @@ function scan(root: SVGSVGElement, fallbackName: string): Scan {
     else for (const view of [...views.keys()]) add(v.char, view, v.name, v.el, true);
   }
 
+  if (!chars.size) {
+    // No names at all (the app left them out of the export): take the drawing apart by its structure instead.
+    // Wrappers with one child are opened; what is inside becomes layer1, layer2… back to front.
+    const drawable = (e: Element) => !SKIP_TAGS.has(e.localName.toLowerCase());
+    let box: Element = root;
+    for (let guard = 0; guard < 20; guard++) {
+      const kids = [...box.children].filter(drawable);
+      if (kids.length === 1 && kids[0].children.length) box = kids[0]; else break;
+    }
+    const kids = [...box.children].filter(drawable);
+    kids.forEach((el, i) => add(fallbackName, fileView ?? 'front', `layer${i + 1}`, el));
+    if (kids.length) {
+      issues.push({
+        severity: 'warn',
+        text: `No layer names were found in this file, so its ${kids.length} layers are numbered (Layer1, Layer2…). In Rig, click a layer, then the node that moves it. `
+          + 'To keep your names next time: in Figma tick "Include id attribute" when exporting SVG; in Illustrator set Object IDs to Layer Names.',
+      });
+    }
+  }
   if (unknown.size) issues.push({ severity: 'warn', text: `Unknown names (ignored): ${[...unknown].join(', ')}` });
   if (dupes.size) issues.push({ severity: 'warn', text: `Named twice, first one used: ${[...dupes].join(', ')}` });
   return { chars, issues };
+}
+
+/** The angle a file stands for, from the last word of its name: momo_side.svg, side.svg, momo-3q.svg. */
+export function viewOfFile(name: string): ViewId | null {
+  const base = name.replace(/\.[^.]+$/, '').toLowerCase();
+  const m = /(?:^|[_\-\s])((?:three[_\-\s])?[a-z0-9]+)$/.exec(base) ?? /^([a-z0-9]+)$/.exec(base);
+  return (m && viewFromName(m[1].replace(/[\-\s]/g, '_'))) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -289,14 +318,11 @@ export async function importSvg(
   const { root, host } = mountSvg(text, fileName);
 
   try {
-    const fallback = fileName.replace(/\.[^.]+$/, '').replace(/^char[_-]/i, '') || 'character';
-    const { chars, issues } = scan(root, fallback);
-    if (!chars.size) {
-      throw new Error(
-        `No pieces found in ${fileName}. Pieces are found by name (head, chest, arm_L…). ` +
-        'In Illustrator export with Object IDs: Layer Names; in Figma tick Include "id" attribute.',
-      );
-    }
+    // A file named after its angle (momo_side.svg) is that angle; the character is the rest of the name.
+    const fallback = fileName.replace(/\.[^.]+$/, '').replace(/[_\-\s](front|side|back|3q|quarter|three[_\-\s]?quarters?|profile)$/i, '').replace(/^char[_-]/i, '')
+      .replace(/^(front|side|back|3q|quarter|profile)$/i, 'character') || 'character';
+    const { chars, issues } = scan(root, fallback, viewOfFile(fileName));
+    if (!chars.size) throw new Error(`Nothing to draw was found in ${fileName}.`);
     const name = wanted && chars.has(wanted) ? wanted : chars.keys().next().value!;
     const views = chars.get(name)!;
     const total = [...views.values()].reduce((n, v) => n + v.size, 0);

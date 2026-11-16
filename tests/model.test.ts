@@ -168,3 +168,22 @@ describe('controller pads', () => {
     expect(mirrorAngles({ shoulder_L: 30, knee_R: -10, neck: 5 })).toEqual({ shoulder_R: -30, knee_L: 10, neck: -5 });
   });
 });
+
+import { canonicalPart, classifyName as classify2 } from '../src/model/skeleton';
+describe('part names written any way', () => {
+  it('reads sides and part words in any order and case', () => {
+    expect(canonicalPart('Arm L')).toBe('arm_L');
+    expect(canonicalPart('L Arm')).toBe('arm_L');
+    expect(canonicalPart('Left Arm')).toBe('arm_L');
+    expect(canonicalPart('ArmLeft')).toBe('arm_L');
+    expect(canonicalPart('Upper Arm R')).toBe('upperarm_R');
+    expect(canonicalPart('lower-arm_L')).toBe('forearm_L');
+    expect(canonicalPart('Lower Leg R')).toBe('shin_R');
+    expect(canonicalPart('Calf L 2')).toBe('shin_L');
+    expect(canonicalPart('Body')).toBe('torso');
+    expect(canonicalPart('Hips')).toBe('pelvis');
+    expect(canonicalPart('Arm')).toBeNull(); // which arm?
+    expect(canonicalPart('Tail')).toBeNull();
+    expect(classify2('Right Hand')).toEqual({ kind: 'piece', name: 'hand_R', variant: false });
+  });
+});

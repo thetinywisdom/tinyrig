@@ -118,6 +118,40 @@ if (want('characters')) {
   await context.close();
 }
 
+const ev2 = (page, fn, arg) => page.evaluate(fn, arg);
+// --- import: names written any way, and a file with no names at all -------------------------
+if (want('import')) {
+  const { context, page } = await fresh();
+  await page.click('#new-scene'); await page.waitForSelector('.sb-panel');
+  await page.click('#sb-characters');
+  await page.click('#chars-import');
+  const dir = new URL('./fixtures/', import.meta.url).pathname;
+  await page.setInputFiles('.importer input[type=file]', [`${dir}momo_front.svg`, `${dir}momo_side.svg`]);
+  await page.waitForSelector('#open-editor, .status.error', { timeout: 60000 });
+  const review = await page.textContent('.review');
+  ok('two SVGs named after their angles import as one character', /front .*side|side .*front/i.test(review), review);
+  ok('a file with no layer names imports with numbered layers and says how to keep names', /numbered/i.test(review), review);
+  ok('layers the app cannot place wait in Match your layers', await page.locator('#matcher [data-match-layer^="layer"]').count() >= 5);
+  await page.screenshot({ path: `${out}/import-match.png` });
+  // Click a layer, then a node: it moves with that node. Drag one onto New node: it gets a node of its own.
+  await page.click('.mt-waiting [data-match-layer="layer1"]');
+  await page.click('[data-match-node="neck"]');
+  ok('click a layer, then a node, to place it', await page.locator('[data-match-node="neck"] [data-match-layer="layer1"]').count() === 1);
+  await page.dragAndDrop('.mt-waiting [data-match-layer="layer2"]', '[data-match-node="new"]');
+  ok('drag a layer onto New node to give it a node of its own', await page.locator('.mt-nodes [data-match-layer="layer2"]').count() === 1);
+  await page.click('#open-editor');
+  await page.waitForSelector('[data-layer]');
+  const layers = await page.$$eval('[data-layer]', (b) => b.map((x) => x.dataset.layer));
+  ok('names like "Left Upper Arm", "Hand L" and "Hips" are read as the body parts they are', ['upperarm_L', 'hand_L', 'pelvis', 'shin_R'].every((n) => layers.includes(n)), layers.join(' '));
+  ok('those layers attach to their nodes by themselves', /→ \d+ L hand/.test(await page.textContent('[data-layer="hand_L"]')));
+  await page.click('.chars-tabs [data-view="side"]');
+  await page.waitForSelector('[data-layer^="layer"]');
+  ok('the side view without names has numbered layers to attach by hand', await page.locator('[data-layer^="layer"]').count() >= 5);
+  ok('what was matched on import is kept in the rig', await ev2(page, () => { const r = window.__chars.rig(); return r.views.side.pieces.layer1.bone === 'head' && r.nodes.some((n) => n.name === 'Layer2'); }));
+  await page.screenshot({ path: `${out}/import-names.png` });
+  await context.close();
+}
+
 // From here on, one browser: a new scene, the sample cleared, the High placeholder imported.
 const { context, page } = await fresh();
 await page.click('#new-scene'); await page.waitForSelector('.sb-panel');
@@ -189,6 +223,11 @@ if (want('characters')) {
   const after = await ev((id) => window.__chars.rigView().pivots[id], added);
   ok('the dropped node stays where it was', Math.hypot(after.x - before.x, after.y - before.y) < 0.5, JSON.stringify([before, after]));
   await page.screenshot({ path: `${out}/characters-rig.png` });
+  // Snap: put the node on a point of its layer from the 3 x 3 picker.
+  await page.click('[data-snap="8"]');
+  ok('Snap puts the node on its layer\'s bottom right corner', await ev((id) => { const c = window.__chars, v = c.rigView(), p = v.pivots[id], b = c.layerBox(c.rig().nodes.find((n) => n.id === id).bone); return Math.abs(p.x - (b.x + b.w)) < 0.5 && Math.abs(p.y - (b.y + b.h)) < 0.5; }, added));
+  ok('the picker shows where the node sits', await page.locator('[data-snap="8"].on').count() === 1);
+  await page.screenshot({ path: `${out}/characters-snap.png` });
   // Delete it: its layer goes back to the node above.
   await page.click(`[data-node="${added}"] .muted`);
   await page.keyboard.press('Delete');
