@@ -1,7 +1,7 @@
 // PSD importer (Procreate). One canvas per view; each piece is a `_line`
 // layer over a `_fill` layer, which map straight onto the two draw passes.
 import { readPsd, type Layer } from 'ag-psd';
-import { classifyName, GROUP_OR_PIECE, splitPsdLayerName, VIEWS, type ViewId } from '../model/skeleton';
+import { classifyName, GROUP_OR_PIECE, splitPsdLayerName, viewFromName, type ViewId } from '../model/skeleton';
 import type { ImportResult, Issue, PieceRaster, Rect } from '../model/types';
 import { buildMask, makeCanvas, splitPasses } from './raster';
 
@@ -9,7 +9,9 @@ interface Pair { line?: Layer; fill?: Layer; z: number }
 
 function viewFromFileName(name: string): ViewId | null {
   const base = name.replace(/\.[^.]+$/, '').toLowerCase();
-  return VIEWS.find((v) => new RegExp(`(^|[_\\-\\s])${v}$`).test(base)) ?? null;
+  // The last word of the file name: momo_front.psd, momo_3q.psd, momo_three_quarter.psd.
+  const m = /(?:^|[_\-\s])((?:three[_\-\s])?[a-z0-9]+)$/.exec(base);
+  return (m && viewFromName(m[1].replace(/[\-\s]/g, '_'))) ?? null;
 }
 
 function charFromFileName(name: string): string {

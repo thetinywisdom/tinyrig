@@ -32,6 +32,8 @@ export interface RigView {
   tips: Partial<Record<LimbId, Pt>>;
   /** Default draw order of outline groups, back to front. */
   groupOrder: string[];
+  /** Side and 3/4 drawings: which way the character looks, as you see it. Missing means left. */
+  faces?: 'left' | 'right';
 }
 
 /** characters/<name>/rig.json */

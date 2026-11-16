@@ -9,8 +9,17 @@ export type RigLevel = 'low' | 'medium' | 'high';
 export const LEVELS: RigLevel[] = ['low', 'medium', 'high'];
 export const LEVEL_RANK: Record<RigLevel, number> = { low: 0, medium: 1, high: 2 };
 
-export type ViewId = 'front' | 'side' | 'back';
-export const VIEWS: ViewId[] = ['front', 'side', 'back'];
+/** The angles a character can be drawn in. "quarter" is the 3/4 view, between front and side. */
+export type ViewId = 'front' | 'quarter' | 'side' | 'back';
+export const VIEWS: ViewId[] = ['front', 'quarter', 'side', 'back'];
+export const VIEW_LABEL: Record<ViewId, string> = { front: 'Front', quarter: '3/4', side: 'Side', back: 'Back' };
+/** Names artists use for each angle, after name clean-up. */
+const VIEW_ALIASES: Record<string, ViewId> = {
+  front: 'front', side: 'side', back: 'back', profile: 'side',
+  quarter: 'quarter', three_quarter: 'quarter', three_quarters: 'quarter', threequarter: 'quarter', '3q': 'quarter', '34': 'quarter', '3quarter': 'quarter',
+};
+/** The angle a layer, folder or file name stands for, if any. */
+export const viewFromName = (name: string): ViewId | null => VIEW_ALIASES[name] ?? null;
 
 export type BoneId = string; // 'pelvis' | 'chest' | 'head' | 'upperarm_L' ...
 export type JointId = string; // 'waist' | 'neck' | 'shoulder_L' ...
@@ -188,7 +197,8 @@ export function classifyName(raw: string): NameKind {
   if (PIECES[name]) return { kind: 'piece', name, variant: false };
   const char = /^char_(.+)$/.exec(name);
   if (char) return { kind: 'char', name: char[1] };
-  if ((VIEWS as string[]).includes(name)) return { kind: 'view', view: name as ViewId };
+  const view = viewFromName(name);
+  if (view) return { kind: 'view', view };
   // Folders that only hold variants.
   if (/^(library|variants|swaps|hands|mouths|eyes|hair|feet)$/.test(name)) return { kind: 'group', name };
   if (parseVariant(name)) return { kind: 'piece', name, variant: true };
@@ -219,8 +229,8 @@ export function parsePartFileName(fileName: string): PartFileName {
     const name = tokens.slice(i).join('_');
     if (!pieceDef(name)) continue;
     const rest = tokens.slice(0, i).filter((t) => t !== 'char');
-    const view = (rest.find((t) => (VIEWS as string[]).includes(t)) as ViewId | undefined) ?? null;
-    return { piece: name, view, char: rest.filter((t) => t !== view).join('_') || null };
+    const view = rest.map(viewFromName).find(Boolean) ?? null;
+    return { piece: name, view, char: rest.filter((t) => viewFromName(t) !== view).join('_') || null };
   }
   return { piece: null, view: null, char: null };
 }
@@ -230,7 +240,7 @@ export function defaultPartOrder(view: ViewId): string[] {
   const arm = (s: Side) => [`forearm_${s}`, `hand_${s}`, `upperarm_${s}`, `arm_${s}`];
   const leg = (s: Side) => [`shin_${s}`, `foot_${s}`, `thigh_${s}`, `leg_${s}`];
   const body = ['pelvis', 'torso', 'chest', 'head'];
-  return view === 'side'
+  return view === 'side' || view === 'quarter'
     ? [...arm('R'), ...leg('R'), 'hair_back', ...leg('L'), ...body, ...arm('L')] // far limbs behind the body
     : ['hair_back', ...leg('R'), ...leg('L'), ...body, ...arm('R'), ...arm('L')];
 }

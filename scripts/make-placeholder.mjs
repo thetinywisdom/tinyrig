@@ -47,8 +47,9 @@ function piece(id, shapes, details = '') {
 
 // --- one view ---------------------------------------------------------------
 function buildView(view, ox) {
-  const front = view === 'front';
-  const X = (x) => x + ox;
+  // The 3/4 view is the front view turned toward the viewer's left: narrower, the far side tucked behind.
+  const quarter = view === 'quarter', front = view === 'front' || quarter;
+  const X = quarter ? (x) => f(ox + 300 + (x - 300) * 0.6 - 10) : (x) => x + ox;
   // Character's own left is on the viewer's right in the front view.
   // In the side view the character faces the viewer's left, so its left side is the near side.
   const J = front
@@ -71,7 +72,7 @@ function buildView(view, ox) {
   const limb = (s) => {
     const sh = J[`shoulder_${s}`], el = J[`elbow_${s}`], wr = J[`wrist_${s}`];
     const hip = J[`hip_${s}`], kn = J[`knee_${s}`], an = J[`ankle_${s}`];
-    const toe = front ? (s === 'L' ? 8 : -8) : -16;
+    const toe = quarter ? -12 : front ? (s === 'L' ? 8 : -8) : -16;
     return {
       upperarm: capsule(sh, 20, el, 16, SHIRT),
       forearm: capsule(el, 16, wr, 12, SKIN),
@@ -90,18 +91,18 @@ function buildView(view, ox) {
     ? path(`M${X(244)} 428L${X(356)} 428Q${X(364)} 428 ${X(364)} 438L${X(366)} 498Q${X(366)} 530 ${X(336)} 530L${X(264)} 530Q${X(234)} 530 ${X(234)} 498L${X(236)} 438Q${X(236)} 428 ${X(244)} 428Z`, PANTS)
     : path(`M${X(268)} 428L${X(332)} 428Q${X(340)} 428 ${X(340)} 438L${X(342)} 498Q${X(342)} 530 ${X(318)} 530L${X(282)} 530Q${X(258)} 530 ${X(258)} 498L${X(260)} 438Q${X(260)} 428 ${X(268)} 428Z`, PANTS);
 
-  const hx = front ? 300 : 294;
-  const headShape = ellipse(X(hx), 160, front ? 60 : 58, 68, SKIN);
+  const hx = quarter ? 290 : front ? 300 : 294;
+  const headShape = ellipse(X(hx), 160, quarter ? 56 : front ? 60 : 58, 68, SKIN);
   const eye = (x) => `<circle cx="${X(x)}" cy="166" r="5" fill="${LINE}"/>`;
   const face = front
     ? `<path d="M${X(238)} 150Q${X(240)} 84 ${X(300)} 84Q${X(360)} 84 ${X(362)} 150Q${X(330)} 118 ${X(300)} 122Q${X(270)} 118 ${X(238)} 150Z" fill="${HAIR}" stroke="${LINE}" stroke-width="${W}" stroke-linejoin="round"/>` +
-      eye(278) + eye(322)
+      (quarter ? eye(256) + eye(296) : eye(278) + eye(322))
     : `<path d="M${X(262)} 108Q${X(290)} 78 ${X(326)} 92Q${X(360)} 110 ${X(354)} 176Q${X(330)} 150 ${X(318)} 116Q${X(290)} 120 ${X(262)} 108Z" fill="${HAIR}" stroke="${LINE}" stroke-width="${W}" stroke-linejoin="round"/>` +
       eye(262);
-  const hairBack = front ? ellipse(X(300), 176, 76, 84, HAIR) : ellipse(X(322), 172, 52, 80, HAIR);
+  const hairBack = quarter ? ellipse(X(316), 174, 62, 82, HAIR) : front ? ellipse(X(300), 176, 76, 84, HAIR) : ellipse(X(322), 172, 52, 80, HAIR);
 
   // The lip-sync set, every shape drawn at the same spot on the face.
-  const mx = X(front ? 300 : 256), my = 198, k = front ? 1 : 0.7;
+  const mx = X(quarter ? 274 : front ? 300 : 256), my = 198, k = quarter ? 0.85 : front ? 1 : 0.7;
   const lip = `stroke="${LINE}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"`;
   const hole = (rx, ry, extra = '') => `<ellipse cx="${mx}" cy="${my}" rx="${f(rx * k)}" ry="${ry}" fill="#5a1e2c" ${lip}/>${extra}`;
   const mouths = {
@@ -116,7 +117,7 @@ function buildView(view, ox) {
   };
 
   const pivots = Object.fromEntries(Object.entries(J).map(([k2, v]) => [k2, { x: v[0], y: v[1] }]));
-  return { front, L, R, chest, pelvis, headShape, face, hairBack, pivots, mouths };
+  return { front: front && !quarter, L, R, chest, pelvis, headShape, face, hairBack, pivots, mouths };
 }
 
 /** Pieces of one view at one rig level, bottom of the layer stack first. */
@@ -145,15 +146,16 @@ function viewMarkup(v, level, id) {
 }
 
 mkdirSync(OUT, { recursive: true });
-const front = buildView('front', 0), side = buildView('side', 600);
+const front = buildView('front', 0), side = buildView('side', 600), quarter = buildView('quarter', 1200);
 for (const level of ['low', 'medium', 'high']) {
   // Illustrator renames repeated layer names (head, head_1_); the importer strips that.
   const svg =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="1200" height="860">\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 860" width="1800" height="860">\n` +
     `<g id="char_placeholder_${level}">\n` +
     `<g id="front">\n${viewMarkup(front, level, (n) => n).join('\n')}\n</g>\n` +
     `<g id="side">\n${viewMarkup(side, level, (n) => `${n}_1_`).join('\n')}\n</g>\n` +
+    `<g id="three_quarter">\n${viewMarkup(quarter, level, (n) => `${n}_2_`).join('\n')}\n</g>\n` +
     // Shared hands: one standard size, pointing down, wrist at the top edge. Used on either wrist, in every view.
     `<g id="hands">\n` +
     piece('hand_fist', [ellipse(1120, 134, 15, 14, SKIN)]) + '\n' +
@@ -174,5 +176,5 @@ for (const [view, v, box] of [['front', front, '0 0 600 860'], ['side', side, '6
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${box}" width="600" height="860">\n${markup}\n</svg>\n`);
   }
 }
-writeFileSync(join(OUT, 'pivots.json'), JSON.stringify({ front: front.pivots, side: side.pivots }, null, 2));
+writeFileSync(join(OUT, 'pivots.json'), JSON.stringify({ front: front.pivots, side: side.pivots, quarter: quarter.pivots }, null, 2));
 console.log('Wrote placeholder SVGs and pivots.json to', OUT);
