@@ -131,14 +131,16 @@ if (want('import')) {
   const review = await page.textContent('.review');
   ok('two SVGs named after their angles import as one character', /front .*side|side .*front/i.test(review), review);
   ok('a file with no layer names imports with numbered layers and says how to keep names', /numbered/i.test(review), review);
-  ok('layers the app cannot place wait in Match your layers', await page.locator('#matcher [data-match-layer^="side"]').count() >= 5);
+  ok('Match your layers shows a stick figure with a spot per body part', await page.locator('#matcher .mt-figure [data-match-node]').count() >= 15);
+  await page.click('[data-match-view="side"]');
+  ok('one angle at a time: the side parts are shown on the Side tab', await page.locator('#matcher [data-match-layer^="side"]').count() >= 5);
   await page.screenshot({ path: `${out}/import-match.png` });
   // Click a layer, then a node: it moves with that node. Drag one onto New node: it gets a node of its own.
-  await page.click('.mt-waiting [data-match-layer="side1"]');
+  await page.click('#matcher [data-match-layer="side1"]');
   await page.click('[data-match-node="neck"]');
   ok('click a layer, then a node, to place it', await page.locator('[data-match-node="neck"] [data-match-layer="side1"]').count() === 1);
-  await page.dragAndDrop('.mt-waiting [data-match-layer="side2"]', '[data-match-node="new"]');
-  ok('drag a layer onto New node to give it a node of its own', await page.locator('.mt-nodes [data-match-layer="side2"]').count() === 1);
+  await page.dragAndDrop('#matcher [data-match-layer="side2"]', '[data-match-node="new"]');
+  ok('drag a part onto New node to give it a node of its own', await page.locator('.mt-own [data-match-layer="side2"]').count() === 1);
   await page.click('#open-editor');
   await page.waitForSelector('[data-layer]');
   const layers = await page.$$eval('[data-layer]', (b) => b.map((x) => x.dataset.layer));

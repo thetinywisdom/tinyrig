@@ -114,6 +114,42 @@ const FOUR: TemplateNode[] = [
 ];
 
 const TEMPLATES: Record<RigKind, TemplateNode[]> = { human: HUMAN, two: TWO, four: FOUR };
+
+/** Where each node of a starting rig sits, as a fraction of the drawing's box. */
+export function jointSpots(kind: RigKind): Record<string, Pt> {
+  return Object.fromEntries(TEMPLATES[kind].map((n) => [n.id, { ...n.at }]));
+}
+/** Human parts by where their middles sit in a front drawing (the character's L is on the viewer's right). */
+export const HUMAN_PART_SPOTS: Record<string, Pt> = {
+  head: { x: 0.5, y: 0.09 }, chest: { x: 0.5, y: 0.31 }, pelvis: { x: 0.5, y: 0.49 },
+  upperarm_L: { x: 0.74, y: 0.3 }, forearm_L: { x: 0.8, y: 0.43 }, hand_L: { x: 0.85, y: 0.56 },
+  thigh_L: { x: 0.6, y: 0.64 }, shin_L: { x: 0.61, y: 0.8 }, foot_L: { x: 0.64, y: 0.95 },
+  upperarm_R: { x: 0.26, y: 0.3 }, forearm_R: { x: 0.2, y: 0.43 }, hand_R: { x: 0.15, y: 0.56 },
+  thigh_R: { x: 0.4, y: 0.64 }, shin_R: { x: 0.39, y: 0.8 }, foot_R: { x: 0.36, y: 0.95 },
+};
+/**
+ * Where each part (by bone) of a starting rig sits: the middle of the stretch from its node to the next one, or a
+ * little past its node for an end part (head, hand, paw, tail).
+ */
+export function partSpots(kind: RigKind): Record<string, Pt> {
+  if (kind === 'human') return { ...HUMAN_PART_SPOTS };
+  const nodes = TEMPLATES[kind], at = (bone: string | null) => nodes.find((n) => n.bone === bone)?.at;
+  const out: Record<string, Pt> = {};
+  for (const n of nodes) {
+    const child = nodes.find((c) => c.parent === n.bone);
+    const parent = at(n.parent);
+    if (child) out[n.bone] = { x: (n.at.x + child.at.x) / 2, y: (n.at.y + child.at.y) / 2 };
+    else if (parent) out[n.bone] = { x: n.at.x + (n.at.x - parent.x) * 0.45, y: n.at.y + (n.at.y - parent.y) * 0.45 };
+    else out[n.bone] = { ...n.at };
+  }
+  // Seen from the side, a creature's left and right legs stand on top of each other: spread them apart so both
+  // can be seen (the far one a little lower).
+  for (const [bone, p] of Object.entries(out)) {
+    if (/_L$/.test(bone)) out[bone] = { x: p.x - 0.07, y: p.y };
+    if (/_R$/.test(bone)) out[bone] = { x: p.x + 0.07, y: p.y + 0.04 };
+  }
+  return out;
+}
 /** A starting rig's nodes, up to a level of detail (all of them by default). */
 export function templateNodes(kind: RigKind, level: RigLevel = 'high'): RigNode[] {
   const kept = TEMPLATES[kind].filter((n) => LEVEL_RANK[n.level] <= LEVEL_RANK[level]);
