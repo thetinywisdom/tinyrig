@@ -12,6 +12,7 @@ import { newShot } from '../model/shot';
 import { LEVELS, LIMBS, VIEWS, VIEW_LABEL, type BoneId, type JointId, type RigLevel, type ViewId } from '../model/skeleton';
 import type { Pose, Pt, Rig, RigNode } from '../model/types';
 import type { Project } from '../project/project';
+import type { Panel } from '../model/storyboard';
 import { StageView } from '../render/stage';
 import { pictures } from '../render/thumb';
 import { h } from './dom';
@@ -24,6 +25,11 @@ export interface CharactersContext {
   importCharacter: () => void;
   /** Character to show first (just imported). */
   show?: string;
+  /**
+   * Inside a scene: the list is the scene's cast, and changes go to a copy of the rig kept in the scene
+   * (Reset to shared drops it; Save to shared copies it over the shared rig).
+   */
+  scene?: { panel: Panel; addCast: (name: string) => void; removeCast: (name: string) => void };
 }
 
 const PROPER_NAME: Record<ViewId, string> = { front: 'front', quarter: 'three_quarter', side: 'side', back: 'back' };
@@ -52,7 +58,7 @@ export class CharactersView {
   /** The node under the pointer: its name always shows. */
   private hover: string | null = null;
   private note = '';
-  private undo: { name: string; rig: string }[] = [];
+  private undo: { name: string; rig: string; copy?: boolean; had?: boolean }[] = [];
   private root = h('div', { class: 'chars' });
   private top = h('header', { class: 'act-top' });
   private list = h('aside', { class: 'chars-list', 'aria-label': 'Characters' });
@@ -83,7 +89,17 @@ export class CharactersView {
   }
 
   private entry() { return this.ctx.project.characters.find((c) => c.name === this.name) ?? null; }
-  private rig() { return this.entry()?.data.rig ?? null; }
+  private rig() {
+    const shared = this.entry()?.data.rig ?? null;
+    return (this.name && this.ctx.scene?.panel.rigs?.[this.name]) || shared;
+  }
+  /** Names shown in the list: the scene's cast inside a scene, every character otherwise. */
+  private names(): string[] {
+    const sc = this.ctx.scene;
+    if (!sc) return this.ctx.project.characters.map((c) => c.name);
+    return [...new Set((sc.panel.cast ?? []).map((c) => c.character))].filter((n) => this.ctx.project.characters.some((c) => c.name === n));
+  }
+  private tweaked(name: string | null) { return !!(name && this.ctx.scene?.panel.rigs?.[name]); }
   private rigView() { return this.rig()?.views[this.view] ?? null; }
   private pickFirstView() {
     const rig = this.rig();
@@ -95,9 +111,12 @@ export class CharactersView {
   // --- changes ------------------------------------------------------------------------------
   /** Keep a copy to undo to, and make sure the rig has nodes of its own to change. */
   private begin(): Rig | null {
-    const rig = this.rig();
+    let rig = this.rig();
     if (!rig || !this.name) return null;
-    this.undo.push({ name: this.name, rig: JSON.stringify(rig) });
+    this.undo.push({ name: this.name, rig: JSON.stringify(rig), copy: !!this.ctx.scene, had: this.tweaked(this.name) });
+    // In a scene, the first change makes this scene's own copy; the shared rig stays as it is.
+    const sc = this.ctx.scene;
+    if (sc && !this.tweaked(this.name)) { rig = JSON.parse(JSON.stringify(rig)) as Rig; (sc.panel.rigs ??= {})[this.name] = rig; }
     if (this.undo.length > 50) this.undo.shift();
     if (!rig.nodes) { rig.nodes = nodesOf(rig); rig.kind = 'human'; }
     return rig;
@@ -113,11 +132,39 @@ export class CharactersView {
     if (!last) return;
     const entry = this.ctx.project.characters.find((c) => c.name === last.name);
     if (!entry) return;
-    const rig = entry.data.rig as unknown as Record<string, unknown>;
-    for (const k of Object.keys(rig)) delete rig[k];
-    Object.assign(rig, JSON.parse(last.rig));
+    const sc = this.ctx.scene;
+    if (last.copy && sc) {
+      if (last.had) (sc.panel.rigs ??= {})[last.name] = JSON.parse(last.rig);
+      else if (sc.panel.rigs) delete sc.panel.rigs[last.name];
+    } else {
+      const rig = entry.data.rig as unknown as Record<string, unknown>;
+      for (const k of Object.keys(rig)) delete rig[k];
+      Object.assign(rig, JSON.parse(last.rig));
+    }
     this.name = last.name;
     this.note = '';
+    this.changed();
+  }
+
+  /** Drop this scene's copy: the character goes back to the shared rig. Undo brings the copy back. */
+  private resetToShared() {
+    const sc = this.ctx.scene, name = this.name;
+    if (!sc || !name || !this.tweaked(name)) return;
+    this.undo.push({ name, rig: JSON.stringify(sc.panel.rigs![name]), copy: true, had: true });
+    delete sc.panel.rigs![name];
+    this.note = `${name} uses the shared rig again.`;
+    this.changed();
+  }
+  /** Copy this scene's rig over the shared one, so every scene gets the change. */
+  private saveToShared() {
+    const sc = this.ctx.scene, name = this.name, entry = this.entry();
+    if (!sc || !name || !entry || !this.tweaked(name)) return;
+    this.undo.push({ name, rig: JSON.stringify(entry.data.rig) });
+    const shared = entry.data.rig as unknown as Record<string, unknown>;
+    for (const k of Object.keys(shared)) delete shared[k];
+    Object.assign(shared, sc.panel.rigs![name]);
+    delete sc.panel.rigs![name];
+    this.note = `Saved. Every scene now uses this ${name}.`;
     this.changed();
   }
 
@@ -256,19 +303,43 @@ export class CharactersView {
   // --- the page -----------------------------------------------------------------------------
   render() {
     const { project } = this.ctx;
-    this.top.replaceChildren(
+    const sc = this.ctx.scene;
+    if (this.name && !this.names().includes(this.name)) this.name = this.names()[0] ?? null;
+    if (!this.name && this.names().length) this.name = this.names()[0];
+    // Inside a scene the scene's header is on top, so this one is not shown.
+    this.top.hidden = !!sc;
+    if (!sc) this.top.replaceChildren(
       h('button', { id: 'chars-back', onclick: () => this.ctx.back() }, '← Storyboard'),
-      h('strong', { class: 'act-title' }, 'Characters'),
+      h('strong', { class: 'act-title' }, 'Cast'),
       h('span', { class: 'grow' }),
       h('button', { id: 'chars-import', class: project.characters.length ? '' : 'primary', onclick: () => this.ctx.importCharacter() }, '+ Import a character'));
-    this.list.replaceChildren(...project.characters.map((c) => h('button', {
-      class: 'chars-who' + (c.name === this.name ? ' sel' : ''), 'data-character': c.name, 'aria-current': c.name === this.name ? 'true' : undefined,
-      onclick: () => { this.name = c.name; this.trial = null; this.selNode = this.selLayer = null; this.adding = false; this.note = ''; this.pickFirstView(); this.render(); this.draw(true); },
-    }, h('b', {}, c.name), h('span', { class: 'muted' }, VIEWS.filter((v) => c.data.rig.views[v]).map((v) => VIEW_LABEL[v]).join(' · ')))));
+    const pick = (name: string) => { this.name = name; this.trial = null; this.selNode = this.selLayer = null; this.adding = false; this.note = ''; this.pickFirstView(); this.render(); this.draw(true); };
+    const who = this.names().map((n) => {
+      const c = project.characters.find((x) => x.name === n)!;
+      return h('button', {
+        class: 'chars-who' + (n === this.name ? ' sel' : ''), 'data-character': n, 'aria-current': n === this.name ? 'true' : undefined, onclick: () => pick(n),
+      }, h('b', {}, n),
+      sc ? h('span', { class: 'chip' + (this.tweaked(n) ? ' or' : '') }, this.tweaked(n) ? 'tweaked here' : 'shared') : null,
+      h('span', { class: 'muted' }, VIEWS.filter((v) => c.data.rig.views[v]).map((v) => VIEW_LABEL[v]).join(' · ')));
+    });
+    const others = sc ? project.characters.filter((c) => !this.names().includes(c.name)) : [];
+    const items: (HTMLElement | null)[] = [
+      sc ? h('h3', {}, 'In this scene') : null, ...who,
+      sc ? h('h3', { class: 'chars-list-gap' }, 'From the cast') : null,
+      ...others.map((c) => h('button', { class: 'chars-add', 'data-add-cast': c.name, onclick: () => { sc!.addCast(c.name); this.name = c.name; this.render(); this.draw(true); } }, h('span', {}, c.name), h('span', { class: 'chip' }, '+ add'))),
+      sc ? h('button', { class: 'chars-add dashed', onclick: () => this.ctx.importCharacter() }, '+ Import a character') : null,
+    ];
+    this.list.replaceChildren(...items.filter((n): n is HTMLElement => !!n));
     const rig = this.rig();
     if (!rig) {
       this.tabs.replaceChildren();
       this.side.hidden = true;
+      if (sc) {
+        this.stageHost.hidden = true;
+        this.below.replaceChildren(h('div', { class: 'act-card' }, h('h1', {}, 'Nobody in this scene yet'),
+          h('p', { class: 'muted' }, project.characters.length ? 'Add someone from the cast on the left.' : 'Import a character first.')));
+        return;
+      }
       this.below.replaceChildren(h('div', { class: 'act-card' }, h('h1', {}, 'No characters yet'),
         h('p', { class: 'muted' }, 'Import one drawn in Illustrator, Figma or Procreate. Every part on its own layer, named after the part.'),
         h('button', { class: 'primary big', onclick: () => this.ctx.importCharacter() }, 'Import a character')));
@@ -294,7 +365,7 @@ export class CharactersView {
           h('span', { class: 'muted seg-label' }, 'Looks'),
           (['left', 'right'] as const).map((d) => h('button', {
             class: (rv.faces ?? 'left') === d ? 'selected' : '', 'data-faces': d,
-            onclick: () => { rv.faces = d; this.ctx.onChanged(); this.render(); },
+            onclick: () => { const r = this.begin(); const v = r?.views[this.view]; if (v) { v.faces = d; this.changed(); } },
           }, d === 'left' ? 'Left' : 'Right'))) : null,
         this.trial ? h('button', { id: 'chars-reset', onclick: () => { this.trial = null; this.render(); this.draw(); } }, 'Back to the drawing') : null));
     this.renderSide(rig);
@@ -319,7 +390,17 @@ export class CharactersView {
     const selected = nodes.find((n) => n.id === this.selNode);
     const order = [root, ...skeletonOf({ nodes }).joints.map((j) => nodes.find((n) => n.id === j.id)!)];
     const num = (bone: string | null) => { const i = order.findIndex((n) => n.bone === bone); return i < 0 ? '--' : String(i).padStart(2, '0'); };
-    this.side.replaceChildren(
+    const sc = this.ctx.scene, name = this.name!;
+    const tweak = sc ? h('section', { class: 'chars-tweak' + (this.tweaked(name) ? ' on' : '') },
+      h('h2', {}, `${name} in this scene`, h('span', { class: 'muted' }, this.tweaked(name) ? 'tweaked' : 'shared')),
+      h('p', { class: 'small' }, this.tweaked(name)
+        ? 'Changes here stay in this scene. The shared rig, used by every other scene, is as it was.'
+        : 'This is the shared rig. Change anything and this scene gets its own copy; other scenes keep the shared one.'),
+      this.tweaked(name) ? h('div', { class: 'act-bar' },
+        h('button', { id: 'rig-reset', onclick: () => this.resetToShared() }, 'Reset to shared'),
+        h('button', { id: 'rig-save-shared', class: 'primary', onclick: () => this.saveToShared() }, 'Save to shared')) : null,
+      h('button', { class: 'link', id: 'rig-remove-cast', onclick: () => sc.removeCast(name) }, `Take ${name} out of this scene`)) : null;
+    this.side.replaceChildren(...[tweak,
       h('section', {},
         h('h2', {}, 'Rig', h('span', { class: 'muted' }, RIG_KIND_LABEL[kind ?? 'human'])),
         h('div', { class: 'chars-kinds', role: 'group', 'aria-label': 'Start from' },
@@ -373,7 +454,7 @@ export class CharactersView {
           h('b', {}, displayName(name)),
           h('span', { class: 'muted' }, `→ ${num(p.bone)} ${this.nodeName(p.bone)}`))))),
         h('p', { class: 'muted small' }, 'Name a layer and a node the same, and they attach by themselves.')),
-    );
+    ].filter((n): n is HTMLElement => !!n));
   }
 
   // --- the drawing and its nodes ------------------------------------------------------------
@@ -503,7 +584,8 @@ export class CharactersView {
       if (hit) this.drag = { kind: 'part', start: screen, piece: hit.piece, bone: hit.bone };
     });
     canvas.addEventListener('pointermove', (e) => {
-      const drag = this.drag, rig = this.rig(), rv = this.rigView();
+      const drag = this.drag, rig = this.rig();
+      let rv = this.rigView();
       const screen = at(e), world = this.stage.screenToWorld(screen);
       if (!rig || !rv) return;
       if (!drag) {
@@ -514,7 +596,8 @@ export class CharactersView {
         return;
       }
       if (drag.kind === 'node') {
-        if (!drag.moved) { this.begin(); drag.moved = true; }
+        // The first move may make this scene's own copy of the rig: work on that from here.
+        if (!drag.moved) { this.begin(); drag.moved = true; rv = this.rigView()!; }
         const n = this.nodes().find((x) => x.id === drag.id)!;
         drag.over = this.dotAt(screen, drag.id)?.node.id ?? null;
         // The drawing stands at rest, so the stage point is the node's point.

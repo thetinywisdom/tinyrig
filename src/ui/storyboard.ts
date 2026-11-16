@@ -3,14 +3,14 @@
 // Everything here is undoable, so nothing asks for confirmation.
 import { uid } from '../model/shot';
 import {
-  byFileName, dropOrphanClips, isActed, movePanel, newPanel, panelSeconds, setPanelSeconds, summary, type Panel, type Storyboard,
+  byFileName, dropOrphanClips, isActed, movePanel, sizeOf, newPanel, panelSeconds, setPanelSeconds, summary, type Panel, type Storyboard,
 } from '../model/storyboard';
 import type { CharacterEntry, Project } from '../project/project';
 import { pictures } from '../render/thumb';
 import { h } from './dom';
 import { EASE_OUT, enter } from './motion';
 import { clearSample } from './sample';
-import { compileActed } from '../model/act';
+import { compileScene, resizeCamera, SIZES, sizeLabel, type ProjectSize } from '../model/scene';
 
 export interface StoryboardContext {
   project: Project;
@@ -40,7 +40,7 @@ export class StoryboardView {
   private root = h('div', { class: 'storyboard' });
   private grid = h('div', { class: 'sb-grid', role: 'list', 'aria-label': 'Panels' });
   private top = h('header', { class: 'sb-top' });
-  private hint = h('footer', { class: 'hint' }, 'Double-click a panel to act it out. Drag to reorder. Ctrl+D duplicates, Delete removes, Ctrl+V pastes a sketch.');
+  private hint = h('footer', { class: 'hint' }, 'Double-click a scene to open it. Drag to reorder. Ctrl+D duplicates, Delete removes, Ctrl+V pastes a sketch.');
   private toastEl = h('div', { class: 'toast', role: 'status', hidden: true });
   private toastTimer = 0;
   private disposers: (() => void)[] = [];
@@ -182,7 +182,7 @@ export class StoryboardView {
     if (i < 0) return;
     const src = this.sb.panels[i];
     // The copy keeps the sketch, notes, length and acted poses, ready to change.
-    const copy = newPanel(uid(), JSON.parse(JSON.stringify({ sketch: src.sketch, notes: src.notes, duration: panelSeconds(src, this.ctx.project.shots), cast: src.cast, moments: src.moments, background: src.background })));
+    const copy = newPanel(uid(), JSON.parse(JSON.stringify({ sketch: src.sketch, notes: src.notes, duration: panelSeconds(src, this.ctx.project.shots), cast: src.cast, lanes: src.lanes, images: src.images, stack: src.stack, camera: src.camera, rigs: src.rigs })));
     this.change(() => { this.sb.panels.splice(i + 1, 0, copy); this.selected = copy.id; }, animate);
   }
   remove(id: string, animate: boolean) {
@@ -240,7 +240,7 @@ export class StoryboardView {
       if (p) {
         el.querySelector('.sb-pic')!.append(h('div', { class: 'sb-actions' },
           h('button', { class: 'sb-open', id: 'sb-open', onclick: (e: Event) => { e.stopPropagation(); this.ctx.openPanel(p); } },
-            this.animated(p) ? 'Change the poses' : 'Act it out')));
+            'Open scene')));
       }
     }
   }
@@ -266,7 +266,8 @@ export class StoryboardView {
         this.change(() => { clearSample(project); this.selected = null; }, true);
         this.toast('Sample cleared.', true);
       } }, 'Clear sample') : null,
-      h('button', { id: 'sb-characters', onclick: () => this.ctx.characters() }, 'Characters'),
+      this.sizeMenu(),
+      h('button', { id: 'sb-characters', onclick: () => this.ctx.characters() }, 'Cast'),
       h('span', { class: 'save-state', id: 'save-state', role: 'status' }, this.ctx.saveState()),
       h('details', { class: 'menu' },
         h('summary', {}, 'Project'),
@@ -274,6 +275,35 @@ export class StoryboardView {
           h('p', { class: 'meta save-status' }, this.ctx.status()),
           this.ctx.menu().map((m) => h('button', { onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); m.run(); } }, m.label)))),
     ].filter((n): n is HTMLElement => !!n));
+  }
+
+  /** The project's shape: every scene exports at this size. */
+  private sizeMenu(): HTMLElement {
+    const cur = sizeOf(this.sb);
+    const icon = (w: number, hh: number) => h('span', { class: 'size-icon', style: `width:${Math.round((w / Math.max(w, hh)) * 16)}px;height:${Math.round((hh / Math.max(w, hh)) * 16)}px` });
+    return h('details', { class: 'menu size-menu', id: 'size-menu' },
+      h('summary', {}, icon(cur.w, cur.h), h('span', { class: 'px' }, `${sizeLabel(cur)} ${cur.w}×${cur.h}`)),
+      h('div', { class: 'menu-items' },
+        h('p', { class: 'meta save-status px' }, 'Project size · every scene exports at this size'),
+        SIZES.map((o) => h('button', {
+          class: 'size-opt' + (o.id === cur.id ? ' selected' : ''), 'data-size': o.id,
+          onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); this.setSize({ id: o.id, w: o.w, h: o.h }); },
+        }, icon(o.w, o.h), h('span', {}, o.label), h('span', { class: 'px muted' }, `${o.w}×${o.h}`))),
+        h('button', { class: 'size-opt', 'data-size': 'custom', onclick: (e: Event) => {
+          (e.target as HTMLElement).closest('details')!.removeAttribute('open');
+          const v = prompt('Width × height in pixels, for example 1440×1080', `${cur.w}x${cur.h}`);
+          const m = v && /^\s*(\d{2,5})\s*[x×*, ]\s*(\d{2,5})\s*$/.exec(v);
+          if (m) this.setSize({ id: 'custom', w: Math.min(4096, +m[1]), h: Math.min(4096, +m[2]) });
+        } }, icon(4, 3), h('span', {}, 'Custom…'))));
+  }
+  private setSize(next: ProjectSize) {
+    const cur = sizeOf(this.sb);
+    if (next.w === cur.w && next.h === cur.h) return;
+    this.change(() => {
+      for (const p of this.sb.panels) resizeCamera(p, cur, next);
+      this.sb.size = next;
+    });
+    pictures.forget('');
   }
 
   private renderPanel(p: Panel, i: number): HTMLElement {
@@ -303,16 +333,24 @@ export class StoryboardView {
         })
       : h('button', { class: 'sb-dur', title: 'Change the length', onclick: (e: Event) => { e.stopPropagation(); this.selected = p.id; this.editing = { id: p.id, field: 'duration' }; this.render(); } }, `${secs}s`);
     const head = h('div', { class: 'sb-head' }, h('span', { class: 'sb-num' }, `#${i + 1}`), h('span', { class: 'sb-dot', 'aria-hidden': 'true' }, '·'), dur,
-      this.animated(p) ? h('span', { class: 'sb-badge' }, `${p.moments!.length} ${p.moments!.length === 1 ? 'pose' : 'poses'}`) : null);
+      this.animated(p) ? h('span', { class: 'sb-badge' }, 'animated') : null);
+    const castNames = [...new Set((p.cast ?? []).map((c) => c.character))];
+    const keys = p.camera?.length ?? 0;
+    const facts = h('div', { class: 'sb-facts' },
+      ...castNames.map((n) => h('span', { class: 'chip' }, n)),
+      h('span', { class: 'grow' }),
+      keys ? h('span', { class: 'px muted' }, `camera · ${keys} ${keys === 1 ? 'key' : 'keys'}`) : null);
 
     // Picture: a frame of the shot once animated (unless sketches are asked for), else the sketch.
-    const pic = h('div', { class: 'sb-pic' });
+    // Each picture is what the camera sees when the scene starts, in the project's shape.
+    const size = sizeOf(this.sb);
+    const pic = h('div', { class: 'sb-pic', style: `aspect-ratio:${size.w}/${size.h}` });
     const showFrame = this.animated(p) && !(this.sb.showSketches && p.sketch);
     if (showFrame) {
       const img = h('img', { alt: `Frame from panel ${i + 1}`, draggable: false });
-      const shot = compileActed(`panel:${p.id}`, { cast: p.cast!, moments: p.moments!, background: p.background }), cached = pictures.cached(shot);
+      const shot = compileScene(`panel:${p.id}`, p, size, { t: 0, minSeconds: 0.5 }), cached = pictures.cached(shot, 0);
       if (cached) img.src = cached;
-      else void pictures.picture(project, shot).then((url) => { img.src = url; }).catch(() => undefined);
+      else void pictures.picture(project, shot, 480, 0).then((url) => { img.src = url; }).catch(() => undefined);
       pic.append(img);
     } else if (p.sketch && this.sketchUrl(p.sketch)) {
       pic.append(h('img', { src: this.sketchUrl(p.sketch)!, alt: `Sketch for panel ${i + 1}`, draggable: false }));
@@ -347,7 +385,7 @@ export class StoryboardView {
     el.append(
       h('button', { class: 'sb-gap', title: `Add a panel before panel ${i + 1}`, 'aria-label': `Add a panel before panel ${i + 1}`,
         onclick: (e: Event) => { e.stopPropagation(); this.addPanel(i); } }, '+'),
-      head, pic, notes);
+      head, pic, notes, facts);
     if (this.editing?.id === p.id) {
       requestAnimationFrame(() => {
         const f = el.querySelector<HTMLInputElement | HTMLTextAreaElement>('.sb-notes-edit, .sb-dur-input');

@@ -2,7 +2,6 @@
 // Panel 1 is finished (the placeholder character waves), panels 2 and 3 are rough sketches.
 // "Clear sample" removes all of it.
 import { placeActor } from '../model/actor';
-import type { Moment } from '../model/act';
 import { newShot, uid } from '../model/shot';
 import { newPanel, type Panel } from '../model/storyboard';
 import type { Pose } from '../model/types';
@@ -111,16 +110,16 @@ export async function addSample(project: Project): Promise<Panel[]> {
   const castId = uid();
   const cast = placed ? [{ id: castId, character: name, root: placed.base.root, scale: placed.base.scale ?? 1 }] : [];
   const steps = placed ? wavePoses(placed.base).filter(([f]) => [0, 10, 16, 22, 47].includes(f)) : [];
-  const moments: Moment[] = steps.map(([, pose], i) => ({
+  const lanes = placed ? { [castId]: { start: 0, poses: steps.map(([, pose], i) => ({
     id: uid(), hold: i === 0 || i === steps.length - 1 ? 0.3 : 0.05, move: 0.25,
-    poses: { [castId]: { view: pose.view, flip: pose.flip, rootAngle: pose.rootAngle, angles: { ...pose.angles } } },
-  }));
+    pose: { view: pose.view, flip: pose.flip, rootAngle: pose.rootAngle, angles: { ...pose.angles } },
+  })) } } : undefined;
 
   const [desk, phone] = await Promise.all([deskSketch(), phoneSketch()]);
   project.assets.set('sketches/sample_desk.png', desk);
   project.assets.set('sketches/sample_phone.png', phone);
   return [
-    newPanel(uid(), { sample: true, cast, moments, duration: 2, notes: 'A turns to camera and waves.\nCamera: medium shot, still.' }),
+    newPanel(uid(), { sample: true, cast, lanes, duration: 2, notes: 'A turns to camera and waves.\nCamera: medium shot, still.' }),
     newPanel(uid(), { sample: true, sketch: 'sample_desk.png', duration: 4, notes: 'A and B at the desk.\nA: Did you see this?\nB: Not yet. Show me.\nCamera: slow push-in.' }),
     newPanel(uid(), { sample: true, sketch: 'sample_phone.png', duration: 1.5, notes: 'Close-up: the phone buzzes on the desk.\nSound: phone buzz.' }),
   ];

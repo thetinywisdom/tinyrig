@@ -10,7 +10,7 @@
 // The same file map is written to a real folder, a zip, or the browser's own storage.
 import type { Pad } from '../model/pads';
 import type { SceneTemplate, Shot } from '../model/shot';
-import type { Storyboard } from '../model/storyboard';
+import { upgradeStoryboard, type Storyboard } from '../model/storyboard';
 import type { Rig, SavedPose } from '../model/types';
 import { readFiles, type Imported, type ImportMode } from '../ui/importer';
 
@@ -108,7 +108,7 @@ export async function filesToProject(files: FileMap, onProgress?: (text: string)
   }
   for (const [path, bytes] of files) if (/^(backgrounds|sketches|photos|audio|fonts)\//.test(path)) project.assets.set(path, bytes);
   const sb = parse<Storyboard>('storyboard.json');
-  if (sb && Array.isArray(sb.panels)) project.storyboard = sb;
+  if (sb && Array.isArray(sb.panels)) project.storyboard = upgradeStoryboard(sb);
   project.googleFonts = parse<{ googleFonts?: string[] }>('project.json')?.googleFonts ?? [];
   return project;
 }

@@ -1,29 +1,26 @@
 // The storyboard: the scene as a grid of panels, read like a comic page.
 // A project holds one scene. Each panel has a sketch, free-text notes and a duration,
 // and, once it is animated, the shot that brings it to life. No DOM here.
-import { actedFrames, type CastMember, type Moment, type PanelBackground } from './act';
+import { DEFAULT_SIZE, isAnimated, sceneSeconds, upgradeScene, type ProjectSize, type SceneData } from './scene';
 import { FPS, type AudioClip, type Shot } from './shot';
 
-export interface Panel {
+/** A panel is a scene: a sketch and notes to plan it, then its cast, layers and camera once animated. */
+export interface Panel extends SceneData {
   id: string;
   /** Image file in the project's sketches/ folder. */
   sketch?: string;
   /** Everything else about the panel: dialogue, action, camera, sound. */
   notes: string;
-  /** Seconds. When the panel has a shot, the shot's length wins. */
+  /** Seconds. An animated scene's own length wins when it is longer. */
   duration: number;
-  /** Name of the shot that animates this panel. */
+  /** Name of the shot that animates this panel (older projects). */
   shot?: string;
   /** Part of the sample scene, removed by "Clear sample". */
   sample?: boolean;
-  /** Acted out: the characters in the panel and their poses, in order. */
-  cast?: CastMember[];
-  moments?: Moment[];
-  background?: PanelBackground;
 }
 
-/** Whether a panel has been acted out (it then shows its characters, not its sketch). */
-export const isActed = (p: Panel) => !!p.cast?.length && !!p.moments?.length;
+/** Whether a panel has been animated (it then shows what its camera sees, not its sketch). */
+export const isActed = (p: Panel) => isAnimated(p);
 
 /** Sound lives on the scene, so a line or a piece of music plays straight across the cuts. */
 export type Lane = 'voice' | 'sfx' | 'music';
@@ -53,6 +50,16 @@ export interface Storyboard {
   sound?: SceneClip[];
   /** Show the original sketch on panels that are already animated. */
   showSketches?: boolean;
+  /** The shape every scene is exported in. Missing: Full HD. */
+  size?: ProjectSize;
+}
+
+export const sizeOf = (sb: Storyboard): ProjectSize => sb.size ?? DEFAULT_SIZE;
+
+/** Bring an older storyboard up to date: acted panels move onto lanes and layers. */
+export function upgradeStoryboard(sb: Storyboard): Storyboard {
+  for (const p of sb.panels) upgradeScene(p);
+  return sb;
 }
 
 export const DEFAULT_DURATION = 3;
@@ -65,7 +72,7 @@ const shotOf = (panel: Panel, shots: Shot[]) => (panel.shot ? shots.find((s) => 
 
 /** Seconds, rounded to a tenth. A panel with a shot lasts as long as its shot. */
 export function panelSeconds(panel: Panel, shots: Shot[]): number {
-  if (isActed(panel)) return Math.round((actedFrames(panel.moments!) / FPS) * 10) / 10;
+  if (isActed(panel)) return Math.round(Math.max(sceneSeconds(panel), 0.5) * 10) / 10;
   const shot = shotOf(panel, shots);
   return Math.round((shot ? shot.length / FPS : panel.duration) * 10) / 10;
 }
@@ -125,7 +132,7 @@ export function freeShotName(base: string, shots: Shot[]): string {
 
 /** A panel's length in frames: its shot's length, or its typed duration. */
 export function panelFrames(panel: Panel, shots: Shot[]): number {
-  if (isActed(panel)) return actedFrames(panel.moments!);
+  if (isActed(panel)) return Math.max(1, Math.round(Math.max(sceneSeconds(panel), 0.5) * FPS));
   const shot = shotOf(panel, shots);
   return shot ? shot.length : Math.max(1, Math.round(panel.duration * FPS));
 }

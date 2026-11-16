@@ -17,21 +17,16 @@ npm test           # unit tests
 
 ## How it works
 
-1. **Characters.** Import a character drawn in Illustrator, Figma or Procreate, one part per layer. Drag each dot to
-   where that part turns. Draw it from as many angles as you like: front, 3/4, side, back. For side and 3/4
-   drawings, say which way the character looks. Every node has a name ("L hand", "Tail"): start from a **Human**,
-   **2 legs** or **4 legs** rig, **Simple**, **Medium** or **Complex**, then add your own nodes (more legs, ears, a
-   tail) and drop one node on another to connect them. A layer named like a node moves with it; or click a layer,
-   then a node.
-2. **Storyboard.** Your scene as a grid of panels: a sketch, notes and a length each. Drop sketch files to make panels.
-3. **Act it out.** Open a panel, take a photo with the webcam or choose photos of yourself. The app finds your body
-   and puts dots on it; drag any that are off. Your character copies the pose, in the angle you stand at.
-   Each photo is a pose; the app moves from one pose to the next. Set how long each pose holds, and press Play.
-   **From the waist up works too** (a webcam at a desk): parts outside the photo keep the pose they had, and only
-   the dots inside the photo are shown.
-
-Also in a panel: **Background…**, **Flip**, the angle buttons, **Save as a pose** and **My poses** (any saved pose
-fits any character).
+1. **Cast.** Import a character drawn in Illustrator, Figma or Procreate, one part per layer, and rig it: named nodes
+   ("L hand", "Tail"), Human / 2 legs / 4 legs, Simple / Medium / Complex. Draw as many angles as you like.
+2. **Storyboard.** Your story as a grid of scenes, each with a sketch and notes. Pick the project size once
+   (Reels, Full HD, Square, 4:5 or your own); every scene is exported in that shape.
+3. **Open a scene.** Two tabs:
+   - **Rig**: who is in this scene. Change a rig here and only this scene changes, until you **Save to shared**.
+   - **Animate**: act each character's poses out from photos or the webcam; the character copies you. Add images
+     as layers (a sky, a room, leaves in front) and drag lanes to change what is in front. The **camera** is a frame
+     on an endless canvas: add keys, and it moves or cuts between them. Only what is inside the frame is exported.
+     **From the waist up works too**: parts outside the photo keep the pose they had.
 
 ## Art: naming
 

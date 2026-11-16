@@ -33,18 +33,21 @@ The owner rejected the earlier editor as too complex: **every new control has to
 
 ## 2. Screens
 
-1. **Storyboard** (home): panels in a grid. Double-click (or **Act it out**) opens a panel. **Characters** in the header.
-2. **Act it out** (one panel): before a take, "Use the webcam / Choose photos". After: your photo with draggable dots
-   (left), the character copying it (right), the poses along the bottom with hold and move times, **Play**,
-   **Background…**, angle buttons, **Flip**, **Save as a pose**, **My poses**. "Next photo plays" picks which character.
-3. **Characters**: list, angle tabs (Front / 3/4 / Side / Back; missing ones greyed), **Looks Left / Right** for side and
-   3/4 drawings, drag a body part to try a bend (never stored). The **rig panel** on the right:
-   - Start from **Human / 2 legs / 4 legs**, at **Simple / Medium / Complex** detail.
-   - **Nodes**, each with a name you can edit ("L hand"). Drag a node to place it; **drop a node on another to connect**
-     them (it then moves with that one). **+ Add a node**, then click where it turns. Delete removes the selected node.
-   - **Layers**, by name, with the node that moves each. Click a layer (in the list or on the drawing), then a node.
-   - A layer and a node with the same name attach by themselves ("L hand" = `hand_L` = "Left Hand").
-   - Ctrl+Z undoes any rig change.
+1. **Storyboard** (home): every panel is a **scene**. Its picture is what the scene's camera sees first, in the
+   project's shape. Header: project **size** (Reels, Full HD, Square, 4:5, custom; one per project), **Cast** (the
+   shared characters), Project menu. Double-click a scene to open it.
+2. **Inside a scene**, the header is breadcrumbs and a switch: `Episode / 03 Scene ▾ / ( Rig | Animate )`, then
+   length, saved, **Play scene**.
+   - **Rig**: who is in the scene (add from the cast, or take out) and their rigs. A change here makes the scene's
+     own copy of that rig (**tweaked here**); **Reset to shared** drops it, **Save to shared** copies it over the
+     shared rig. Same rig editor as Cast: angles, named nodes, drag to connect, layers, Simple/Medium/Complex.
+   - **Animate**: an endless canvas. Characters and images are **layers**, one stack front to back (drag a lane name
+     up or down). Each character has a lane of poses acted from photos or the webcam. The **camera** is a frame in
+     the project's shape with its own lane of keys: it **moves** (Smooth, Linear, Snap) or **cuts** into each key.
+     Quick shots: Wide, Medium, Close-up. Only what is inside the frame is exported.
+   - Timeline: solid black blocks for poses (drag the body to slide, the right edge to hold longer), light blocks
+     for images (drag the ends), squares for camera keys; click the ruler to move the playhead.
+3. **Cast**: the shared characters and their rigs (the old Characters screen).
 
 ## 3. Status
 
@@ -55,8 +58,10 @@ The owner rejected the earlier editor as too complex: **every new control has to
 | 3. Characters screen and new app shell | Done. Old editor deleted. |
 | 3b. Half body (from the waist up) | Done. Tracker guesses outside the photo are ignored (`inPicture`); unseen parts keep their pose across angles; without hips the waist leans 30° at most; `bodyShown()` labels the photo. |
 | 3c. Rigs of your own | Done. Named nodes per character (`Rig.nodes`), starting rigs human / 2 legs / 4 legs at Simple / Medium / Complex, drag-to-connect, add, rename, remove, layer-to-node, name matching. Layers with any name import as parts. |
-| 4. Webcam takes (a few seconds of video, key poses picked) | **Next.** |
-| 5. Video export of the storyboard | Not started. |
+| 3d. Scenes: Rig and Animate tabs, layers, camera keys, project size, scene rig tweaks | Done. `src/model/scene.ts`, `src/ui/scene.ts`, `src/ui/animate.ts`. Older acted panels move onto lanes and layers when opened. |
+| 3e. Who is who: one photo with two people driving two characters | Not started (the tracker reads one person). |
+| 4. Webcam takes (a few seconds of video, key poses picked) | Not started. |
+| 5. Video export of the storyboard | **Next.** Render each scene through its camera at the project size. |
 | 6. Tune the angle thresholds on the owner's real photos | Waiting for photos. |
 
 ## 4. Code
@@ -65,7 +70,8 @@ TypeScript + Vite, PixiJS, no UI framework (`h()` DOM helper).
 
 | Path | What lives there |
 | --- | --- |
-| `src/model/act.ts` | A panel acted out: `CastMember`, `Moment` (hold, move, photo, points, poses), `compileActed()` → a `Shot` the renderer draws. Pure, tested. |
+| `src/model/scene.ts` | A scene: cast, lanes of poses, image layers, the stack, camera keys (`cameraAt`), project size, rig tweaks, `compileScene()` → a `Shot` the renderer draws; `upgradeScene()` for older panels. Pure, tested. |
+| `src/model/act.ts` | Shared types (`CastMember`, `ActedPose`) and the older `Moment` model (read when upgrading). |
 | `src/model/storyboard.ts` | Panels (`cast`, `moments`, `background`, or a sketch and typed duration), scene time. |
 | `src/model/skeleton.ts`, `pose.ts`, `types.ts`, `shot.ts` | The engine: bones, joints, views (`front`, `quarter`, `side`, `back`), FK/IK, keys and `evaluate()`. |
 | `src/model/rig.ts` | Rigs of your own: nodes, starting rigs and their detail levels, `skeletonOf(rig)`, name matching (`sameName`, `displayName`), `attachByName`. Pure, tested. |
@@ -73,7 +79,7 @@ TypeScript + Vite, PixiJS, no UI framework (`h()` DOM helper).
 | `src/capture/facing.ts` | Front / 3/4 / side / back and which way you look, from the points. Pure, tested. |
 | `src/capture/mapping.ts` | Points → joint angles against a drawing's rest pose (any angle). |
 | `src/capture/act.ts` | `poseFromPoints()`: angle, flip, angles, spine limit. The dots shown (`DOTS`, `BONES`). |
-| `src/ui/storyboard.ts`, `act.ts`, `characters.ts`, `start.ts`, `importer.ts`, `sample.ts` | The screens. |
+| `src/ui/storyboard.ts`, `scene.ts`, `animate.ts`, `characters.ts`, `start.ts`, `importer.ts`, `sample.ts` | The screens. `scene.ts` is the header and the Rig / Animate switch; Rig is `characters.ts` in scene mode. |
 | `src/render/stage.ts`, `thumb.ts` | The renderer, and the shared picture maker for panel and pose thumbnails. |
 | `src/main.ts` | Routing between screens, saving, project menu. |
 
@@ -99,7 +105,7 @@ node scripts/check.mjs check-output act characters      # chosen sections: story
 ```
 
 The act check uses `scripts/fixtures/pose-photo.png`, the placeholder drawn in a known pose, so it does not
-depend on how the tracker reads a freshly drawn picture. Dev hooks: `window.__sb`, `__act`, `__chars`, `__project()`.
+depend on how the tracker reads a freshly drawn picture. Dev hooks: `window.__sb`, `__scene`, `__anim`, `__chars`, `__project()`.
 
 ## 6. History
 

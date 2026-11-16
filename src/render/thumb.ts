@@ -2,7 +2,8 @@
 // One hidden stage serves the whole app (storyboard panels, the editor's filmstrip, the scene player's
 // stills), and pictures are cached until their shot changes.
 import type { Project } from '../project/project';
-import { evaluate, formatById, stackOrder, visibleLayers, visibleTexts, type Shot } from '../model/shot';
+import type { Rig } from '../model/types';
+import { evaluate, formatById, stackOrder, visibleLayers, visibleTexts, type Camera, type FormatDef, type Shot } from '../model/shot';
 import { unlockedOf } from '../model/rig';
 import { StageView, type DrawActor, type SceneFrame } from './stage';
 
@@ -16,8 +17,10 @@ export function finishedFrame(project: Project, shot: Shot, frame: number, opts:
     if (a.hidden) continue;
     const entry = project.characters.find((c) => c.name === a.character);
     if (!entry) continue;
+    // A scene may have tweaked this character's rig for itself.
+    const rig = (shot as Shot & { rigs?: Record<string, Rig> }).rigs?.[a.character] ?? entry.data.rig;
     const pose = evaluate(shot, a, frame);
-    if (entry.data.rig.views[pose.view]) actors.push({ id: a.id, rig: entry.data.rig, pose, unlocked: unlockedOf(entry.data.rig), extra: a.role === 'extra' });
+    if (rig.views[pose.view]) actors.push({ id: a.id, rig, pose, unlocked: unlockedOf(rig), extra: a.role === 'extra' });
   }
   return {
     shot, actors, order: stackOrder(shot),
@@ -36,6 +39,19 @@ export async function prepareStage(stage: StageView, project: Project, shot: Sho
     const bytes = project.assets.get(`backgrounds/${l.file}`);
     if (bytes) await stage.setBackground(l.file, bytes).catch(() => undefined);
   }
+}
+
+/**
+ * The output shape and camera a shot is pictured with: a scene carries one camera, named after the project size
+ * (`size-1080x1920`); older shots use their 16:9 framing.
+ */
+export function framingOf(shot: Shot): { format: FormatDef; camera: Camera } {
+  const sized = Object.entries(shot.cameras).find(([k]) => k.startsWith('size-'));
+  if (sized) {
+    const [w, h] = sized[0].slice(5).split('x').map(Number);
+    return { format: { id: sized[0], label: '', ratio: `${w}:${h}`, w, h }, camera: sized[1] };
+  }
+  return { format: formatById('yt'), camera: shot.cameras.yt };
 }
 
 class ShotPictures {
@@ -74,9 +90,10 @@ class ShotPictures {
       await this.init();
       const stage = this.stage!;
       await prepareStage(stage, project, shot, this.loaded);
-      const format = formatById('yt'), camera = shot.cameras.yt;
+      const { format, camera } = framingOf(shot);
       stage.draw(finishedFrame(project, shot, frame ?? Math.floor(shot.length / 2)), { format, camera });
-      const url = stage.renderFrame(format, camera, width / format.w).toDataURL('image/jpeg', 0.85);
+      // `width` is the longer side, so tall (Reels) pictures are not huge.
+      const url = stage.renderFrame(format, camera, width / Math.max(format.w, format.h)).toDataURL('image/jpeg', 0.85);
       this.cache.set(slot, { key, url });
       return url;
     });

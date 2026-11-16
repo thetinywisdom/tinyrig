@@ -193,7 +193,9 @@ export class StageView {
 
   draw(frame: SceneFrame, subtitleFormat: { format: FormatDef; camera: Camera } | null) {
     const { shot } = frame;
-    this.paper.clear().rect(0, 0, shot.stage.w, shot.stage.h).fill({ color: shot.stage.color });
+    // A scene has no edges (its stage is 0 × 0): no paper, the canvas shows through.
+    this.paper.clear();
+    if (shot.stage.w > 0) this.paper.rect(0, 0, shot.stage.w, shot.stage.h).fill({ color: shot.stage.color });
 
     // Images and characters, in stack order.
     this.stackLayer.removeChildren();

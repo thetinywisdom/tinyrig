@@ -41,29 +41,29 @@ if (want('storyboard')) {
   const sb = (fn, arg) => page.evaluate(fn, arg);
   ok('a new scene has 3 sample panels', (await ids()).length === 3);
   await page.waitForFunction(() => document.querySelector('.sb-panel img')?.src.startsWith('data:image/jpeg'), null, { timeout: 15000 });
-  ok('the acted sample panel shows its character and how many poses', /poses/.test(await page.textContent('.sb-panel >> nth=0 >> .sb-head')));
+  ok('the animated sample scene shows its picture and cast', /animated/i.test(await page.textContent('.sb-panel >> nth=0 >> .sb-head')) && /placeholder/i.test(await page.textContent('.sb-panel >> nth=0')));
   ok('the header counts panels', /· 3 panels$/.test(await page.textContent('#sb-summary')), await page.textContent('#sb-summary'));
   await page.screenshot({ path: `${out}/storyboard.png` });
   await page.click('.sb-panel >> nth=1 >> .sb-dur');
   await page.fill('.sb-dur-input', '3.2');
   await page.keyboard.press('Enter');
   ok('a sketch panel takes a typed length', (await page.textContent('.sb-panel >> nth=1 >> .sb-head')).includes('3.2s'));
-  ok('an acted panel takes its length from its poses (no box to type in)', await page.locator('.sb-panel >> nth=0 >> .sb-dur-input').count() === 0 && await page.locator('.sb-panel >> nth=0 >> .sb-dur.fixed').count() === 1);
+  ok('an animated scene takes its length from its poses (no box to type in)', await page.locator('.sb-panel >> nth=0 >> .sb-dur-input').count() === 0 && await page.locator('.sb-panel >> nth=0 >> .sb-dur.fixed').count() === 1);
   await page.click('#sb-add');
   ok('Add panel adds one at the end', (await ids()).length === 4);
   await page.click('.sb-panel >> nth=0 >> .sb-head');
   await page.keyboard.press('Control+d');
-  ok('Ctrl+D duplicates a panel, poses and all', (await ids()).length === 5 && await sb(() => window.__sb.sb.panels[1].moments?.length === window.__sb.sb.panels[0].moments?.length));
+  ok('Ctrl+D duplicates a scene, poses and all', (await ids()).length === 5 && await sb(() => JSON.stringify(window.__sb.sb.panels[1].lanes) === JSON.stringify(window.__sb.sb.panels[0].lanes)));
   const before = await ids();
   await page.keyboard.press('Delete');
   ok('Delete removes a panel with an Undo message', (await ids()).length === 4 && /deleted/.test(await page.textContent('.toast')));
   await page.click('#toast-undo');
   ok('Undo brings it back', (await ids()).join() === before.join());
-  ok('the selected panel offers Act it out', await page.locator('#sb-open').count() === 1);
+  ok('the selected panel offers Open scene', await page.locator('#sb-open').count() === 1);
   await page.dblclick('.sb-panel >> nth=2 >> .sb-head');
-  await page.waitForSelector('.act-card');
-  ok('double-click opens Act it out', await page.locator('#act-photos').count() === 1);
-  await page.click('#act-back');
+  await page.waitForSelector('.scene-head');
+  ok('double-click opens the scene; with nobody in it, it offers the cast', await page.locator('[data-add-cast]').count() >= 1);
+  await page.click('#scene-back');
   await page.waitForSelector('.sb-panel');
   await page.click('#clear-sample');
   ok('Clear sample removes only the sample panels', await sb(() => window.__sb.sb.panels.every((p) => !p.sample)));
@@ -214,81 +214,147 @@ if (want('act')) {
   // shoulder_L -100, elbow_L -30, shoulder_R 35, hip_R 25, knee_R -40). A fixed file, so the check never depends
   // on how the tracker reads a freshly drawn picture.
   const photoFile = new URL('./fixtures/pose-photo.png', import.meta.url).pathname;
+  const cur = () => ev(() => { const a = window.__anim, s = a.sel; return s && s.kind === 'pose' ? a.p.lanes[s.cast].poses[s.i] : null; });
   await page.click('#chars-back');
   await page.waitForSelector('.sb-empty, .sb-panel');
   if (await page.locator('#sb-first').count()) await page.click('#sb-first');
   await page.dblclick('.sb-panel >> nth=0 >> .sb-head');
+  await page.waitForSelector('.scene-head');
+  ok('a scene opens on Animate, with the breadcrumbs and the Rig | Animate switch', await page.locator('[data-tab="animate"].on').count() === 1 && /Momo|Untitled|scene/i.test(await page.textContent('.scene-head')));
+  await page.click('[data-add-cast]');
   await page.waitForSelector('#act-photos');
   await page.screenshot({ path: `${out}/act-empty.png` });
   await choose(page, '#act-photos', photoFile);
   await page.waitForSelector('.act-dot', { timeout: 60000 });
   await page.waitForTimeout(800);
-  const pose = await ev(() => { const a = window.__act, m = a.p.moments[a.cur]; return Object.values(m.poses)[0]; });
+  const pose = (await cur()).pose;
   const a = pose.angles, r = (n) => Math.round(n ?? 0);
   console.log(`    acted: ${pose.view}${pose.flip ? ' flipped' : ''}, shoulder_L ${r(a.shoulder_L)} elbow_L ${r(a.elbow_L)} shoulder_R ${r(a.shoulder_R)} knee_R ${r(a.knee_R)}`);
   ok('the app finds the body and shows its dots', await page.locator('.act-dot').count() >= 15);
   ok('the character copies the photo (raised arm within 25°)', near(a.shoulder_L ?? 0, -100, 25) && near(a.shoulder_R ?? 0, 35, 25), JSON.stringify(a));
   ok('a front-facing photo gives the front drawing', pose.view === 'front' && !pose.flip);
+  ok('the pose is a black block in the character\'s lane', await page.locator('.tl .blk').count() === 1);
   await page.screenshot({ path: `${out}/act-take.png` });
   // Drag the left elbow dot down: the upper arm and forearm follow.
   const armBefore = a.shoulder_L ?? 0;
   const dot = await page.locator('[data-dot="13"]').boundingBox();
   await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2); await page.mouse.down();
   await page.mouse.move(dot.x + dot.width / 2 + 10, dot.y + dot.height / 2 + 90, { steps: 6 }); await page.mouse.up();
-  const armNow = () => ev(() => { const a = window.__act, m = a.p.moments[a.cur]; return Object.values(m.poses)[0].angles.shoulder_L; });
+  const armNow = async () => (await cur()).pose.angles.shoulder_L;
   const after = await armNow();
   ok('dragging a dot changes the pose', Math.abs(after - armBefore) > 10, `${armBefore} → ${after}`);
   await page.keyboard.press('Control+z');
   ok('undo puts the dot back', near(await armNow(), armBefore, 0.5));
-  // Choose the angle and flip by hand.
   await page.click('[data-view="quarter"]');
-  ok('choosing 3/4 by hand draws the 3/4 drawing', await ev(() => { const a = window.__act, m = a.p.moments[a.cur]; return Object.values(m.poses)[0].view; }) === 'quarter');
+  ok('choosing 3/4 by hand draws the 3/4 drawing', (await cur()).pose.view === 'quarter');
   await page.click('#act-flip');
-  ok('Flip flips it', await ev(() => { const a = window.__act, m = a.p.moments[a.cur]; return Object.values(m.poses)[0].flip; }) === true);
+  ok('Flip flips it', (await cur()).pose.flip === true);
   await page.click('[data-view="front"]'); await page.click('#act-flip');
-  // A second pose from the same photo, a different hold, then Play.
-  await choose(page, '#act-next', photoFile);
-  await page.waitForFunction(() => window.__act.p.moments.length === 2, null, { timeout: 60000 });
-  ok('+ Act the next pose adds pose 2 and selects it', await ev(() => window.__act.cur) === 1 && await page.locator('.act-pose').count() === 2);
+  // A second pose from the lane's + button, a longer hold, then Play.
+  await choose(page, '.tl-add', photoFile);
+  await page.waitForFunction(() => { const a = window.__anim; return Object.values(a.p.lanes)[0].poses.length === 2; }, null, { timeout: 60000 });
+  ok('+ at the end of the lane adds pose 2 and picks it', await ev(() => window.__anim.sel.i) === 1 && await page.locator('.tl .blk').count() === 2);
   await page.fill('#act-hold', '1.5'); await page.keyboard.press('Tab');
-  ok('a pose holds as long as you say', await ev(() => window.__act.p.moments[1].hold) === 1.5);
-  ok('the panel is as long as its holds and moves', /2\.5s in all/.test(await page.textContent('.act-total')), await page.textContent('.act-total'));
-  await page.click('#act-play');
+  ok('a pose holds as long as you say', (await cur()).hold === 1.5);
+  ok('the scene is as long as its holds and moves', /2\.5s/.test(await page.textContent('.scene-head')), await page.textContent('.scene-head'));
+  // Drag pose 2's right edge: it holds longer.
+  const edge = await page.locator('.tl .blk >> nth=1 >> .edge').boundingBox();
+  await page.mouse.move(edge.x + 3, edge.y + edge.height / 2); await page.mouse.down();
+  await page.mouse.move(edge.x + 63, edge.y + edge.height / 2, { steps: 5 }); await page.mouse.up();
+  ok('dragging a block\'s edge makes the pose hold longer', (await cur()).hold > 1.6, String((await cur()).hold));
+  await page.click('#scene-play');
   await page.waitForTimeout(400);
-  ok('Play runs from pose to pose', await ev(() => window.__act.playing === true));
-  await page.click('#act-play');
-  // Save as a pose, and use it from My poses.
+  ok('Play scene runs from pose to pose', await ev(() => window.__anim.isPlaying));
+  await page.click('#scene-play');
+  // Save as a pose, and use it on pose 1.
   await page.click('#act-save-pose');
   await page.waitForTimeout(400);
-  ok('Save as a pose adds to My poses', await ev(() => window.__project().poses.length) === 1);
-  await page.click('.act-pose >> nth=0 >> .act-pose-pick');
+  ok('Save pose adds to My poses', await ev(() => window.__project().poses.length) === 1);
+  await page.click('.tl .blk >> nth=0');
   await page.click('#act-my-poses summary');
   await page.click('#act-my-poses .pose-row');
-  ok('a saved pose can be put on another pose', await ev(() => { const ms = window.__act.p.moments, k = Object.keys(ms[0].poses)[0]; return JSON.stringify(ms[0].poses[k].angles) === JSON.stringify(ms[1].poses[k].angles); }));
+  ok('a saved pose can be put on another pose', await ev(() => { const ps = Object.values(window.__anim.p.lanes)[0].poses; return JSON.stringify(ps[0].pose.angles) === JSON.stringify(ps[1].pose.angles); }));
   // A photo from the waist up: the legs keep their pose, and no leg dots are shown.
-  const legsBefore = await ev(() => { const a = window.__act, ms = a.p.moments, k = Object.keys(ms[0].poses)[0]; return JSON.stringify([ms.at(-1).poses[k].angles.knee_L, ms.at(-1).poses[k].angles.hip_R]); });
-  await page.click('.act-pose >> nth=1 >> .act-pose-pick');
-  await choose(page, '#act-next', new URL('./fixtures/half-photo.png', import.meta.url).pathname);
-  await page.waitForFunction(() => window.__act.p.moments.length === 3, null, { timeout: 60000 });
+  const legs = (pz) => JSON.stringify([pz.angles.knee_L, pz.angles.hip_R]);
+  const legsBefore = await ev(() => { const ps = Object.values(window.__anim.p.lanes)[0].poses; return JSON.stringify([ps.at(-1).pose.angles.knee_L, ps.at(-1).pose.angles.hip_R]); });
+  await choose(page, '.tl-add', new URL('./fixtures/half-photo.png', import.meta.url).pathname);
+  await page.waitForFunction(() => Object.values(window.__anim.p.lanes)[0].poses.length === 3, null, { timeout: 60000 });
   await page.waitForTimeout(500);
   ok('a photo from the waist up says so', await page.locator('#act-half').count() === 1);
   ok('it shows no dots for parts outside the photo', await page.locator('[data-dot="25"], [data-dot="27"]').count() === 0);
-  ok('and the legs keep the pose they had', await ev(() => { const a = window.__act, ms = a.p.moments, k = Object.keys(ms[2].poses)[0]; return JSON.stringify([ms[2].poses[k].angles.knee_L, ms[2].poses[k].angles.hip_R]); }) === legsBefore, legsBefore);
+  ok('and the legs keep the pose they had', legs((await cur()).pose) === legsBefore, legsBefore);
   await page.screenshot({ path: `${out}/act-half.png` });
-  // Back on the storyboard, the panel shows its character.
-  await page.click('#act-back');
+
+  // The camera: keys on its own lane; it moves or cuts into each.
+  await page.click('#lane-camera');
+  await ev(() => { window.__anim.t = 0; window.__anim.render(); });
+  await page.click('#cam-key');
+  ok('+ Key here adds a camera key at the playhead', await ev(() => window.__anim.p.camera.length) === 1);
+  await ev(() => { window.__anim.t = 1; window.__anim.render(); });
+  await page.waitForTimeout(300);
+  await page.click('[data-shot="close"]');
+  ok('a quick close-up adds a second, smaller key', await ev(() => { const k = window.__anim.p.camera; return k.length === 2 && k[1].width < k[0].width; }));
+  await page.click('[data-arrive="cut"]');
+  const camAt = (t) => ev(async (t) => { const m = await import('/src/model/scene.ts'); const a = window.__anim; return m.cameraAt(a.p, a.size, t).width; }, t);
+  ok('Cut: the camera holds, then jumps at the key', await camAt(0.95) === await camAt(0) && await camAt(1) < await camAt(0));
+  await page.click('[data-arrive="move"]');
+  ok('Move: the camera eases between keys', (await camAt(0.5)) < (await camAt(0)) && (await camAt(0.5)) > (await camAt(1)));
+  // Drag the frame on the canvas: the key moves with it.
+  const x0 = await ev(() => window.__anim.p.camera[1].x);
+  const st = await page.locator('.anim-stage canvas').boundingBox();
+  const mid = await ev(() => { const a = window.__anim, k = a.p.camera[1]; return a.stage.worldToScreen({ x: k.x, y: k.y }); });
+  await page.mouse.move(st.x + mid.x, st.y + mid.y); await page.mouse.down();
+  await page.mouse.move(st.x + mid.x + 60, st.y + mid.y, { steps: 5 }); await page.mouse.up();
+  ok('dragging the frame moves the camera at this key', await ev(() => window.__anim.p.camera[1].x) > x0 + 10);
+  await page.screenshot({ path: `${out}/act-camera.png` });
+  // An image layer, behind the character; drag its lane up to put it in front.
+  await choose(page, '#add-image', photoFile);
+  await page.waitForFunction(() => window.__anim.p.images?.length === 1, null, { timeout: 15000 });
+  const order = () => ev(async () => { const m = await import('/src/model/scene.ts'); return m.stackOf(window.__anim.p).map((e) => e.kind); });
+  ok('an image is a layer behind the characters', JSON.stringify(await order()) === '["cast","image"]', JSON.stringify(await order()));
+  const lane = await page.locator('.tl [data-stack^="image"]').boundingBox();
+  await page.mouse.move(lane.x + 20, lane.y + lane.height / 2); await page.mouse.down();
+  await page.mouse.move(lane.x + 20, lane.y + lane.height / 2 - 50, { steps: 6 }); await page.mouse.up();
+  ok('dragging a lane up puts that layer in front', JSON.stringify(await order()) === '["image","cast"]', JSON.stringify(await order()));
+  await page.keyboard.press('Control+z');
+  await page.screenshot({ path: `${out}/act-layers.png` });
+
+  // Rig tab: a change here stays in this scene until you save it to the shared rig.
+  await page.click('[data-tab="rig"]');
+  await page.waitForSelector('.chars-tweak');
+  const box = await page.locator('.chars-stage canvas').boundingBox();
+  const elbow = await ev(() => { const c = window.__chars, v = c.rigView(); return c.stage.worldToScreen(v.pivots.elbow_L); });
+  const shared0 = await ev(() => JSON.stringify(window.__project().characters[0].data.rig.views.front.pivots.elbow_L));
+  await page.mouse.move(box.x + elbow.x, box.y + elbow.y); await page.mouse.down();
+  await page.mouse.move(box.x + elbow.x + 20, box.y + elbow.y + 10, { steps: 5 }); await page.mouse.up();
+  ok('changing a rig inside a scene makes a scene copy; the shared rig stays', await ev(() => !!Object.keys(window.__project().storyboard.panels[0].rigs ?? {}).length)
+    && await ev(() => JSON.stringify(window.__project().characters[0].data.rig.views.front.pivots.elbow_L)) === shared0);
+  ok('the cast list says it is tweaked here', /tweaked here/i.test(await page.textContent('.chars-list')));
+  await page.screenshot({ path: `${out}/scene-rig.png` });
+  await page.click('#rig-reset');
+  ok('Reset to shared drops the scene copy', await ev(() => !Object.keys(window.__project().storyboard.panels[0].rigs ?? {}).length));
+  await page.click('[data-tab="animate"]');
+
+  // Back on the storyboard: the project size, and the scene's picture is what its camera sees first.
+  await page.click('#scene-back');
   await page.waitForFunction(() => document.querySelector('.sb-panel img')?.src.startsWith('data:image/jpeg'), null, { timeout: 15000 });
-  ok('the storyboard panel now shows the acted character', /3 poses/.test(await page.textContent('.sb-panel >> nth=0 >> .sb-head')));
+  ok('the storyboard scene shows its cast', /placeholder/i.test(await page.textContent('.sb-panel >> nth=0')));
+  await page.click('#size-menu summary');
+  await page.click('[data-size="reels"]');
+  ok('the project size is set once, for every scene', await ev(() => window.__project().storyboard.size?.id) === 'reels');
+  const ar = await page.locator('.sb-panel >> nth=0 >> .sb-pic').boundingBox();
+  ok('scene pictures take the project\'s shape (tall for Reels)', ar.height > ar.width, JSON.stringify(ar));
+  await page.waitForTimeout(800);
   await page.screenshot({ path: `${out}/storyboard-acted.png` });
 }
 
 // --- save: reload keeps the scene and its photos ------------------------------------------
 if (want('save')) {
   await page.waitForTimeout(900);
-  const snap = () => ev(() => { const p = window.__project(); return JSON.stringify({ chars: p.characters.map((c) => c.name), poses: p.poses.length, assets: [...p.assets.keys()].sort(), panels: p.storyboard.panels.map((x) => [x.cast?.length ?? 0, x.moments?.length ?? 0]), quarterFaces: p.characters[0]?.data.rig.views.quarter?.faces ?? null }); });
+  const snap = () => ev(() => { const p = window.__project(); return JSON.stringify({ chars: p.characters.map((c) => c.name), poses: p.poses.length, assets: [...p.assets.keys()].sort(), panels: p.storyboard.panels.map((x) => [x.cast?.length ?? 0, Object.values(x.lanes ?? {}).reduce((n, l) => n + l.poses.length, 0), x.camera?.length ?? 0, x.images?.length ?? 0]), quarterFaces: p.characters[0]?.data.rig.views.quarter?.faces ?? null }); });
   const a = await snap();
   await page.reload();
-  await page.waitForSelector('.sb-panel, .act, .chars');
+  await page.waitForSelector('.sb-panel, .scene, .chars');
   const b = await snap();
   ok('reload keeps characters, panels, poses and photos', a === b, `\n   before ${a}\n   after  ${b}`);
   const zip = await ev(async () => {

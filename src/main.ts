@@ -1,4 +1,5 @@
-// The app: three screens. The storyboard is home; a panel opens in Act it out; Characters is where joints are set.
+// The app. The storyboard is home: its panels are scenes. A scene opens on Rig or Animate. Cast is the shared
+// characters every scene starts from.
 import './fonts.css';
 import './style.css';
 import { newStoryboard, type Panel } from './model/storyboard';
@@ -7,12 +8,12 @@ import {
   canUseFolders, fromZip, loadFromBrowser, pickFolder, readFolder, saveToBrowser, toZip, writeFolder,
 } from './project/store';
 import { pictures } from './render/thumb';
-import { ActView } from './ui/act';
 import { CharactersView } from './ui/characters';
 import { h } from './ui/dom';
 import { mountImporter, type Imported, type ImportMode } from './ui/importer';
 import { installPopovers } from './ui/motion';
 import { addSample } from './ui/sample';
+import { SceneView, type SceneTab } from './ui/scene';
 import { mountStart } from './ui/start';
 import { StoryboardView } from './ui/storyboard';
 
@@ -55,7 +56,7 @@ function save() {
 function close() {
   screen?.dispose();
   screen = null;
-  if (import.meta.env.DEV) Object.assign(window, { __sb: null, __act: null, __chars: null });
+  if (import.meta.env.DEV) Object.assign(window, { __sb: null, __anim: null, __chars: null, __scene: null });
 }
 function ensureStoryboard() { project.storyboard ??= newStoryboard(); }
 
@@ -72,18 +73,19 @@ function showStoryboard() {
   if (import.meta.env.DEV) Object.assign(window, { __sb: view });
 }
 
-function showAct(panel: Panel) {
+function showScene(panel: Panel, tab: SceneTab = 'animate') {
   close();
-  const sb = project.storyboard!;
-  remember(`panel:${panel.id}`);
-  const view = new ActView(app, {
-    project, panel, number: sb.panels.indexOf(panel) + 1, onChanged: save,
+  remember(`panel:${panel.id}:${tab}`);
+  const view = new SceneView(app, {
+    project, panel, tab, onChanged: save, saveState,
     back: () => showStoryboard(),
-    characters: () => { returnTo = panel; showCharacters(); },
+    open: (p, t) => showScene(p, t),
+    importCharacter: () => { returnTo = panel; showImporter(); },
   });
   screen = view;
-  if (import.meta.env.DEV) Object.assign(window, { __act: view });
+  if (import.meta.env.DEV) Object.assign(window, { __scene: view });
 }
+const showAct = (panel: Panel) => showScene(panel, 'animate');
 
 function showCharacters(show?: string) {
   close();
@@ -91,7 +93,7 @@ function showCharacters(show?: string) {
   const back = returnTo;
   const view = new CharactersView(app, {
     project, onChanged: save, show,
-    back: () => (back && project.storyboard?.panels.includes(back) ? showAct(back) : showStoryboard()),
+    back: () => (back && project.storyboard?.panels.includes(back) ? showScene(back, 'rig') : showStoryboard()),
     importCharacter: showImporter,
   });
   screen = view;
@@ -100,7 +102,8 @@ function showCharacters(show?: string) {
 
 function showImporter() {
   close();
-  mountImporter(app, addCharacter, () => showCharacters());
+  const from = returnTo;
+  mountImporter(app, addCharacter, () => (from && project.storyboard?.panels.includes(from) ? showScene(from, 'rig') : showCharacters()));
 }
 
 function addCharacter(data: Imported, files: InFile[], mode: ImportMode) {
@@ -109,6 +112,13 @@ function addCharacter(data: Imported, files: InFile[], mode: ImportMode) {
   if (at >= 0) project.characters[at] = entry; else project.characters.push(entry); // same name = updated art
   pictures.forget(entry.name);
   save();
+  // Imported from inside a scene: back to that scene's Rig tab, with the new character in it.
+  const from = returnTo;
+  if (from && project.storyboard?.panels.includes(from)) {
+    returnTo = null;
+    showScene(from, 'rig');
+    return;
+  }
   showCharacters(entry.name);
 }
 
@@ -189,8 +199,9 @@ async function boot() {
   ensureStoryboard();
   // Reopen where you were.
   const where = remembered();
-  const panel = where?.startsWith('panel:') ? project.storyboard!.panels.find((p) => p.id === where.slice(6)) : undefined;
-  if (panel) showAct(panel);
+  const [, id, tab] = where?.startsWith('panel:') ? where.split(':') : [];
+  const panel = id ? project.storyboard!.panels.find((p) => p.id === id) : undefined;
+  if (panel) showScene(panel, tab === 'rig' ? 'rig' : 'animate');
   else if (where === 'characters') showCharacters();
   else showStoryboard();
 }
