@@ -518,3 +518,5 @@ button.rec.on, button.rec:active { background: var(--accent); }
 .chars-danger { background: transparent !important; border-style: dashed !important; }
 .chars-danger button { align-self: flex-start; }
 .chars-danger button:hover:not(:disabled) { background: var(--accent); }
+.mt-layer { position: relative; }
+.mt-guess { position: absolute; top: 2px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); color: var(--ink); font: 400 10px/16px var(--pixel); font-style: normal; text-align: center; }

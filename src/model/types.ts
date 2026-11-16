@@ -139,4 +139,6 @@ export interface ImportResult {
   issues: Issue[];
   /** Other characters found in the same file. */
   otherCharacters: string[];
+  /** Layers placed on a node by where they sit, not by their name: shown for checking. */
+  guessed?: string[];
 }

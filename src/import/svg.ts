@@ -101,12 +101,64 @@ function scan(root: SVGSVGElement, fallbackName: string, fileView: ViewId | null
       const kids = [...box.children].filter(drawable);
       if (kids.length === 1 && kids[0].children.length) box = kids[0]; else break;
     }
-    const kids = [...box.children].filter(drawable);
-    kids.forEach((el, i) => add(fallbackName, fileView ?? 'front', `layer${i + 1}`, el));
+    // Figma draws an "inside" outline as three loose siblings: the fill (<use> of a shape), a <mask> of that shape,
+    // and the outline masked by it. Siblings that draw the same shape are one part: wrap them in a group.
+    const href = (e: Element) => (e.getAttribute('href') || e.getAttribute('xlink:href') || e.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '').replace(/^#/, '');
+    // The shape an element draws: what a <use> points at, or a path's own outline. A masked element draws the shape
+    // inside its mask.
+    const ownShape = (e: Element | null | undefined): string => (!e ? '' : e.localName === 'use' ? href(e) : e.localName === 'path' ? `d:${e.getAttribute('d') ?? ''}` : '');
+    const shapeOf = (e: Element): string => {
+      const m = /url\(#([^)]+)\)/.exec(e.getAttribute('mask') ?? e.getAttribute('clip-path') ?? '');
+      if (m) return ownShape(root.querySelector(`[id="${CSS.escape(m[1])}"]`)?.firstElementChild);
+      return ownShape(e);
+    };
+    const groups: Element[][] = [];
+    let lastShape = '';
+    for (const el of [...box.children].filter(drawable)) {
+      const shape = shapeOf(el);
+      if (shape && shape === lastShape) groups.at(-1)!.push(el); else groups.push([el]);
+      lastShape = shape;
+    }
+    // Small drawings lying on a part (a blush, a line, a nail) belong to it: a loose element whose box sits inside
+    // another part's box joins the smallest such part, drawn on top of it.
+    const boxOf = (els: Element[]) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const el of els) {
+        try { const b = (el as SVGGraphicsElement).getBBox(); x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); } catch { /* not drawable */ }
+      }
+      return { x0, y0, x1, y1, area: Math.max(0, x1 - x0) * Math.max(0, y1 - y0) };
+    };
+    const boxes = groups.map(boxOf);
+    // Loose: one plain path that is not part of a fill-and-outline set.
+    const loose = (i: number) => groups[i].length === 1 && shapeOf(groups[i][0]).startsWith('d:');
+    const into = new Map<number, number>();
+    groups.forEach((_, i) => {
+      if (!loose(i)) return;
+      const d = boxes[i];
+      let best = -1;
+      boxes.forEach((p, j) => {
+        if (j === i || loose(j)) return;
+        const ix = Math.max(0, Math.min(d.x1, p.x1) - Math.max(d.x0, p.x0)), iy = Math.max(0, Math.min(d.y1, p.y1) - Math.max(d.y0, p.y0));
+        if (d.area > 0 && (ix * iy) / d.area >= 0.9 && (best < 0 || p.area < boxes[best].area)) best = j;
+      });
+      if (best >= 0) into.set(i, best);
+    });
+    into.forEach((to, from) => groups[to].push(...groups[from]));
+    const parts = groups.filter((_, i) => !into.has(i));
+    const kids = parts.map((members) => {
+      if (members.length === 1) return members[0];
+      const g = root.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'g');
+      members[0].before(g);
+      g.append(...members);
+      return g;
+    });
+    // Named after the angle, so Front3 and Side3 (different parts) never get mixed up.
+    const v = fileView ?? 'front';
+    kids.forEach((el, i) => add(fallbackName, v, `${v}${i + 1}`, el));
     if (kids.length) {
       issues.push({
         severity: 'warn',
-        text: `No layer names were found in this file, so its ${kids.length} layers are numbered (Layer1, Layer2…). In Rig, click a layer, then the node that moves it. `
+        text: `No layer names were found in this file, so its ${kids.length} parts are numbered and placed by where they sit. Check them in Match your layers below. `
           + 'To keep your names next time: in Figma tick "Include id attribute" when exporting SVG; in Illustrator set Object IDs to Layer Names.',
       });
     }

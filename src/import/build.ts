@@ -114,7 +114,10 @@ export function buildRig(imp: ImportResult): { rig: Rig; issues: Issue[] } {
   if (creature.score > human) applyKind(rig, imp, creature.kind, 'high');
   // Nothing named like a body part (numbered layers, or names of your own): start from the human rig, and you
   // attach each layer to its node in Rig.
-  else if (!human) applyKind(rig, imp, 'human', 'high');
+  else if (!human) {
+    applyKind(rig, imp, 'human', 'high');
+    guessByPlace(rig, imp);
+  }
   return { rig, issues };
 }
 
@@ -218,4 +221,61 @@ export function levelIssues(rig: Rig, level: RigLevel): Issue[] {
     }
   }
   return issues;
+}
+
+/**
+ * Layers with no usable names (numbered): place each on a human node by where it sits in the drawing, like an
+ * artist would read it: the round part on top is the head, the lowest parts are feet, and so on. Every guess is
+ * listed in imp.guessed so the importer can show it for checking.
+ */
+export function guessByPlace(rig: Rig, imp: ImportResult) {
+  // Where each part's middle sits, as a fraction of the whole drawing (front view; L is on the viewer's right).
+  const SPOT: Record<string, [number, number]> = {
+    head: [0.5, 0.1], chest: [0.5, 0.3], pelvis: [0.5, 0.48],
+    upperarm_L: [0.72, 0.3], forearm_L: [0.77, 0.43], hand_L: [0.8, 0.54],
+    thigh_L: [0.58, 0.62], shin_L: [0.58, 0.8], foot_L: [0.6, 0.95],
+    upperarm_R: [0.28, 0.3], forearm_R: [0.23, 0.43], hand_R: [0.2, 0.54],
+    thigh_R: [0.42, 0.62], shin_R: [0.42, 0.8], foot_R: [0.4, 0.95],
+  };
+  const guessed: string[] = [];
+  for (const v of VIEWS) {
+    const rv = rig.views[v], pieces = imp.views[v];
+    if (!rv || !pieces?.length) continue;
+    const loose = pieces.filter((p) => !PIECES[p.name] && !rv.pieces[p.name]?.variant);
+    if (!loose.length) continue;
+    const x0 = Math.min(...pieces.map((p) => p.bbox.x)), y0 = Math.min(...pieces.map((p) => p.bbox.y));
+    const x1 = Math.max(...pieces.map((p) => p.bbox.x + p.bbox.w)), y1 = Math.max(...pieces.map((p) => p.bbox.y + p.bbox.h));
+    const W = Math.max(1, x1 - x0), H = Math.max(1, y1 - y0);
+    // A side drawing has its limbs one behind the other: only height tells them apart.
+    const side = v === 'side' || W < H * 0.42;
+    const pairs: { piece: string; bone: string; cost: number }[] = [];
+    for (const p of loose) {
+      const cx = (p.bbox.x + p.bbox.w / 2 - x0) / W, cy = (p.bbox.y + p.bbox.h / 2 - y0) / H;
+      for (const [bone, [sx, sy]] of Object.entries(SPOT)) {
+        const dx = side ? 0 : cx - sx, dy = cy - sy;
+        // The biggest part near the top is the head, the biggest in the middle the body: size helps break ties.
+        const big = (p.bbox.w * p.bbox.h) / (W * H);
+        const sizeCost = bone === 'head' || bone === 'chest' || bone === 'pelvis' ? Math.max(0, 0.04 - big) * 3 : Math.max(0, big - 0.08) * 2;
+        pairs.push({ piece: p.name, bone, cost: Math.hypot(dx, dy) + sizeCost });
+      }
+    }
+    pairs.sort((a, b) => a.cost - b.cost);
+    const usedPiece = new Set<string>(), usedBone = new Set<string>();
+    for (const pr of pairs) {
+      if (usedPiece.has(pr.piece) || usedBone.has(pr.bone) || pr.cost > 0.25) continue;
+      usedPiece.add(pr.piece); usedBone.add(pr.bone);
+      if (rv.pieces[pr.piece]) rv.pieces[pr.piece].bone = pr.bone;
+      guessed.push(pr.piece);
+    }
+    // Points for the nodes, now that their layers are known.
+    for (const n of rig.nodes ?? []) {
+      if (!n.parent) continue;
+      const at = guessNodePoint(rig, imp, v, n.id);
+      if (at) rv.pivots[n.id] = at;
+    }
+    const hips = [rv.pivots.hip_L, rv.pivots.hip_R].filter(Boolean) as Pt[];
+    if (hips.length === 2) rv.rootPivot = round({ x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 });
+    for (const limb of LIMBS) if (rv.pivots[limb.end]) rv.tips[limb.id] = { ...rv.pivots[limb.end] };
+  }
+  imp.guessed = guessed;
 }

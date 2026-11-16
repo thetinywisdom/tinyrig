@@ -157,7 +157,7 @@ export function mountImporter(
     showNaming(found.some((i) => i.severity === 'error' || i.severity === 'warn'));
     // Layers the app could not place by name: drag them onto nodes here, before the character opens.
     const matchBox = h('section', { class: 'matcher', id: 'matcher' });
-    const waiting = unplacedLayers(imp, rig).length;
+    const waiting = unplacedLayers(imp, rig).length + (imp.guessed?.length ?? 0);
     if (waiting) mountMatcher(matchBox, imp, rig, () => undefined);
 
     review.replaceChildren(...[

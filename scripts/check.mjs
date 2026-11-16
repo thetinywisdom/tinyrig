@@ -131,23 +131,23 @@ if (want('import')) {
   const review = await page.textContent('.review');
   ok('two SVGs named after their angles import as one character', /front .*side|side .*front/i.test(review), review);
   ok('a file with no layer names imports with numbered layers and says how to keep names', /numbered/i.test(review), review);
-  ok('layers the app cannot place wait in Match your layers', await page.locator('#matcher [data-match-layer^="layer"]').count() >= 5);
+  ok('layers the app cannot place wait in Match your layers', await page.locator('#matcher [data-match-layer^="side"]').count() >= 5);
   await page.screenshot({ path: `${out}/import-match.png` });
   // Click a layer, then a node: it moves with that node. Drag one onto New node: it gets a node of its own.
-  await page.click('.mt-waiting [data-match-layer="layer1"]');
+  await page.click('.mt-waiting [data-match-layer="side1"]');
   await page.click('[data-match-node="neck"]');
-  ok('click a layer, then a node, to place it', await page.locator('[data-match-node="neck"] [data-match-layer="layer1"]').count() === 1);
-  await page.dragAndDrop('.mt-waiting [data-match-layer="layer2"]', '[data-match-node="new"]');
-  ok('drag a layer onto New node to give it a node of its own', await page.locator('.mt-nodes [data-match-layer="layer2"]').count() === 1);
+  ok('click a layer, then a node, to place it', await page.locator('[data-match-node="neck"] [data-match-layer="side1"]').count() === 1);
+  await page.dragAndDrop('.mt-waiting [data-match-layer="side2"]', '[data-match-node="new"]');
+  ok('drag a layer onto New node to give it a node of its own', await page.locator('.mt-nodes [data-match-layer="side2"]').count() === 1);
   await page.click('#open-editor');
   await page.waitForSelector('[data-layer]');
   const layers = await page.$$eval('[data-layer]', (b) => b.map((x) => x.dataset.layer));
   ok('names like "Left Upper Arm", "Hand L" and "Hips" are read as the body parts they are', ['upperarm_L', 'hand_L', 'pelvis', 'shin_R'].every((n) => layers.includes(n)), layers.join(' '));
   ok('those layers attach to their nodes by themselves', /→ \d+ L hand/.test(await page.textContent('[data-layer="hand_L"]')));
   await page.click('.chars-tabs [data-view="side"]');
-  await page.waitForSelector('[data-layer^="layer"]');
-  ok('the side view without names has numbered layers to attach by hand', await page.locator('[data-layer^="layer"]').count() >= 5);
-  ok('what was matched on import is kept in the rig', await ev2(page, () => { const r = window.__chars.rig(); return r.views.side.pieces.layer1.bone === 'head' && r.nodes.some((n) => n.name === 'Layer2'); }));
+  await page.waitForSelector('[data-layer^="side"]');
+  ok('the side view without names has numbered layers to attach by hand', await page.locator('[data-layer^="side"]').count() >= 5);
+  ok('what was matched on import is kept in the rig', await ev2(page, () => { const r = window.__chars.rig(); return r.views.side.pieces.side1.bone === "head" && r.nodes.some((n) => n.name === "Side2"); }));
   await page.screenshot({ path: `${out}/import-names.png` });
   await context.close();
 }

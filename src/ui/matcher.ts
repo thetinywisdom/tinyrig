@@ -43,7 +43,10 @@ function thumb(r: PieceRaster): HTMLCanvasElement {
 
 export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onChange: () => void) {
   let picked: string | null = null;
+  /** Guesses you have moved or confirmed lose their question mark. */
+  const confirmed = new Set<string>();
   const attach = (layer: string, nodeBone: string) => {
+    confirmed.add(layer);
     rig.nodes ??= nodesOf(rig);
     for (const v of VIEWS) {
       const rv = rig.views[v];
@@ -73,7 +76,7 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
     const t = h('button', { class: 'mt-layer' + (picked === l.name ? ' sel' : ''), draggable: true, 'data-match-layer': l.name, title: 'Drag onto the node that moves it',
       // While placing another layer, a click here goes to the slot this tile sits in.
       onclick: (e: Event) => { if (picked && picked !== l.name) return; e.stopPropagation(); picked = picked === l.name ? null : l.name; render(); } },
-    thumb(l.raster), h('span', {}, displayName(l.name)));
+    thumb(l.raster), h('span', {}, displayName(l.name)), imp.guessed?.includes(l.name) && !confirmed.has(l.name) ? h('i', { class: 'mt-guess', title: 'Placed by where it sits. Drag it if it is wrong.' }, '?') : null);
     t.addEventListener('dragstart', (e) => { e.dataTransfer!.setData('text/layer', l.name); e.dataTransfer!.effectAllowed = 'move'; t.classList.add('dragging'); });
     t.addEventListener('dragend', () => t.classList.remove('dragging'));
     return t;
@@ -84,17 +87,18 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
     const nodes = nodesOf(rig), root = rootNode(nodes);
     const order = [root, ...skeletonOf({ nodes }).joints.map((j) => nodes.find((n) => n.id === j.id)!)];
     const kind: RigKind = rig.nodes ? rig.kind ?? 'human' : 'human';
+    const guesses = (imp.guessed ?? []).filter((n) => !confirmed.has(n)).length;
     const onNode = (bone: string) => all.filter((l) => placed(rig, l.name) && VIEWS.some((v) => rig.views[v]?.pieces[l.name]?.bone === bone));
     host.replaceChildren(
       h('div', { class: 'mt-head' },
-        h('h3', {}, waiting.length ? `Match your layers · ${waiting.length} to place` : 'Every layer is placed'),
+        h('h3', {}, waiting.length ? `Match your layers · ${waiting.length} to place` : guesses ? `Match your layers · ${guesses} placed by where they sit` : 'Every layer is placed'),
         h('div', { class: 'seg', role: 'group', 'aria-label': 'Rig' }, RIG_KINDS.map((k) => h('button', {
           class: kind === k ? 'selected' : '', 'data-match-kind': k,
           onclick: () => { applyKind(rig, imp, k, 'high'); done(); },
         }, RIG_KIND_LABEL[k])))),
       h('p', { class: 'meta' }, waiting.length
         ? 'These layers have names the app could not place. Drag each onto the node that moves it, or onto New node to give it one of its own. (Or click a layer, then a node.)'
-        : 'Drag any layer to another node to change it.'),
+        : guesses ? 'Parts marked ? were placed by where they sit in your drawing. Drag any that are wrong onto the right node.' : 'Drag any layer to another node to change it.'),
       h('div', { class: 'mt-body' },
         h('div', { class: 'mt-waiting' + (picked ? ' picking' : '') }, ...(waiting.length ? waiting.map(tile) : [h('p', { class: 'meta' }, 'Nothing left to place.')])),
         h('div', { class: 'mt-nodes' }, ...order.map((n) => {
