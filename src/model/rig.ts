@@ -10,9 +10,9 @@
 import { JOINTS, JOINT_BY_ID, LEVEL_RANK, ROOT_BONE, unlockedJoints, type BoneId, type JointDef, type JointId, type RigLevel } from './skeleton';
 import type { Pt, Rig, RigNode, RigView } from './types';
 
-export type RigKind = 'human' | 'two' | 'four';
-export const RIG_KINDS: RigKind[] = ['human', 'two', 'four'];
-export const RIG_KIND_LABEL: Record<RigKind, string> = { human: 'Human', two: '2 legs', four: '4 legs' };
+export type RigKind = 'human' | 'two' | 'four' | 'custom';
+export const RIG_KINDS: RigKind[] = ['human', 'two', 'four', 'custom'];
+export const RIG_KIND_LABEL: Record<RigKind, string> = { human: 'Humanoid', two: '2 legs', four: '4 legs', custom: 'Custom' };
 /** How many nodes a starting rig has. Stored as the rig's level (low, medium, high). */
 export const DETAIL_LABEL: Record<RigLevel, string> = { low: 'Simple', medium: 'Medium', high: 'Complex' };
 
@@ -113,7 +113,10 @@ const FOUR: TemplateNode[] = [
   }),
 ];
 
-const TEMPLATES: Record<RigKind, TemplateNode[]> = { human: HUMAN, two: TWO, four: FOUR };
+/** Your own body type: just a body to start from; every other node is one you make. */
+const CUSTOM: TemplateNode[] = [N(ROOT_NODE, ROOT_BONE, 'Body', null, 0.5, 0.5)];
+
+const TEMPLATES: Record<RigKind, TemplateNode[]> = { human: HUMAN, two: TWO, four: FOUR, custom: CUSTOM };
 
 /** Where each node of a starting rig sits, as a fraction of the drawing's box. */
 export function jointSpots(kind: RigKind): Record<string, Pt> {
@@ -131,8 +134,17 @@ export const HUMAN_PART_SPOTS: Record<string, Pt> = {
  * Where each part (by bone) of a starting rig sits: the middle of the stretch from its node to the next one, or a
  * little past its node for an end part (head, hand, paw, tail).
  */
-export function partSpots(kind: RigKind): Record<string, Pt> {
-  if (kind === 'human') return { ...HUMAN_PART_SPOTS };
+export function partSpots(kind: RigKind, view: 'front' | 'quarter' | 'side' | 'back' = 'front'): Record<string, Pt> {
+  if (kind === 'human') {
+    if (view === 'front') return { ...HUMAN_PART_SPOTS };
+    if (view === 'back') return Object.fromEntries(Object.entries(HUMAN_PART_SPOTS).map(([b, p]) => [b, { x: 1 - p.x, y: p.y }]));
+    // Turned: the far arm and leg move in behind the body. In profile they stand right behind the near ones.
+    const k = view === 'side' ? 0.28 : 0.6;
+    return Object.fromEntries(Object.entries(HUMAN_PART_SPOTS).map(([b, p]) => {
+      const far = /_R$/.test(b);
+      return [b, { x: 0.5 + (p.x - 0.5) * k + (view === 'side' ? (far ? -0.1 : 0.1) : 0), y: p.y + (far && view === 'side' ? 0.02 : 0) }];
+    }));
+  }
   const nodes = TEMPLATES[kind], at = (bone: string | null) => nodes.find((n) => n.bone === bone)?.at;
   const out: Record<string, Pt> = {};
   for (const n of nodes) {

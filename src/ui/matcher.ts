@@ -1,7 +1,7 @@
 // Match your layers: a stick figure of the rig with a drop spot on every body part. Parts the app could not place
 // by name wait in the tray; drag each onto its spot (or click it, then the spot). One angle at a time.
 // Drop a part on "New node" to give it a node of its own; drop it back on the tray to take it off.
-import { applyKind, guessNodePoint } from '../import/build';
+import { applyKind, guessByPlace, refreshPoints } from '../import/build';
 import {
   displayName, newNodeId, nodeForName, nodesOf, partSpots, RIG_KIND_LABEL, RIG_KINDS, rootNode, type RigKind,
 } from '../model/rig';
@@ -19,13 +19,13 @@ function layersIn(imp: ImportResult, rig: Rig, view: ViewId): { name: string; ra
 const allLayers = (imp: ImportResult, rig: Rig) => VIEWS.flatMap((v) => layersIn(imp, rig, v).map((l) => ({ ...l, view: v })));
 
 /** A part counts as placed when its name says where it goes, or someone attached it to a node. */
-function placedIn(rig: Rig, view: ViewId, name: string): boolean {
+function placedIn(rig: Rig, imp: ImportResult, view: ViewId, name: string): boolean {
   const nodes = nodesOf(rig), root = rootNode(nodes).bone;
-  if (nodeForName(nodes, name)) return true;
+  if (nodeForName(nodes, name) || imp.onRoot?.includes(name)) return true;
   const bone = rig.views[view]?.pieces[name]?.bone;
   return !!bone && bone !== root;
 }
-export const unplacedLayers = (imp: ImportResult, rig: Rig) => allLayers(imp, rig).filter((l) => !placedIn(rig, l.view, l.name));
+export const unplacedLayers = (imp: ImportResult, rig: Rig) => allLayers(imp, rig).filter((l) => !placedIn(rig, imp, l.view, l.name));
 
 function thumb(r: PieceRaster, size: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
@@ -46,7 +46,8 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
   /** Guesses you have moved or confirmed lose their question mark. */
   const confirmed = new Set<string>();
 
-  const attach = (layer: string, nodeBone: string) => {
+  /** Put a part on a node (in every angle that has it). `toTray` takes it off again. */
+  const attach = (layer: string, nodeBone: string, toTray = false) => {
     confirmed.add(layer);
     rig.nodes ??= nodesOf(rig);
     for (const v of VIEWS) {
@@ -54,9 +55,12 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
       if (!rv) continue;
       for (const [name, p] of Object.entries(rv.pieces)) if (name === layer || (p.slot === layer && !p.overlay)) p.bone = nodeBone;
     }
-    // A node that had no part gets its point from this one.
-    const node = rig.nodes.find((n) => n.bone === nodeBone);
-    if (node?.parent) for (const v of VIEWS) { const at = rig.views[v] && guessNodePoint(rig, imp, v, node.id); if (at) rig.views[v]!.pivots[node.id] = at; }
+    // The root (Hips, Body) is where unplaced parts wait too, so remember the ones you put there on purpose.
+    const root = rootNode(rig.nodes).bone;
+    imp.onRoot = (imp.onRoot ?? []).filter((n) => n !== layer);
+    if (nodeBone === root && !toTray) imp.onRoot.push(layer);
+    // Every node's point follows from the parts it now has.
+    refreshPoints(rig, imp);
   };
   /** A node of its own, named after the part, moving with the root until you connect it in Rig. */
   const ownNode = (layer: string) => {
@@ -66,6 +70,17 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
     attach(layer, id);
   };
   const done = () => { picked = null; onChange(); render(); };
+  /** The app read a drawing as the wrong angle: move it (swapping with whatever is there). */
+  const moveView = (from: ViewId, to: ViewId) => {
+    if (from === to) return;
+    const iv = imp.views as Record<string, unknown>, rv = rig.views as Record<string, unknown>;
+    [iv[from], iv[to]] = [iv[to], iv[from]];
+    [rv[from], rv[to]] = [rv[to], rv[from]];
+    for (const o of [iv, rv]) for (const k of [from, to]) if (o[k] === undefined) delete o[k];
+    view = to;
+    refreshPoints(rig, imp);
+    done();
+  };
 
   const dropZone = (el: HTMLElement, onDrop: (layer: string) => void) => {
     el.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('text/layer')) { e.preventDefault(); el.classList.add('over'); } });
@@ -87,7 +102,17 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
   };
 
   function figure(kind: RigKind, onBone: (bone: string) => { name: string; raster: PieceRaster }[]): HTMLElement {
-    const nodes = nodesOf(rig), parts = partSpots(kind);
+    const nodes = nodesOf(rig);
+    if (kind === 'custom') {
+      // Your own body type: no figure to follow, just your nodes. Drop a part on New node to make one.
+      return h('div', { class: 'mt-grid' }, ...nodes.map((n) => {
+        const here = onBone(n.bone);
+        const spot = h('div', { class: 'mt-spot static' + (here.length ? ' full' : '') + (picked ? ' target' : ''), 'data-match-node': n.id }, h('span', { class: 'mt-name px' }, n.name), h('div', { class: 'mt-in' }, ...here.map((l) => tile(l, 30))));
+        dropZone(spot, (layer) => attach(layer, n.bone));
+        return spot;
+      }));
+    }
+    const parts = partSpots(kind, view);
     const spotOf = (bone: string): Pt | null => parts[bone] ?? null;
     // Fit the figure in a box with room around it for the drop spots.
     const pts = Object.values(parts);
@@ -120,11 +145,10 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
   }
 
   function render() {
-    const views = VIEWS.filter((v) => imp.views[v]?.length);
     const parts = layersIn(imp, rig, view);
-    const waiting = parts.filter((l) => !placedIn(rig, view, l.name));
+    const waiting = parts.filter((l) => !placedIn(rig, imp, view, l.name));
     const kind: RigKind = rig.nodes ? rig.kind ?? 'human' : 'human';
-    const onBone = (bone: string) => parts.filter((l) => placedIn(rig, view, l.name) && rig.views[view]?.pieces[l.name]?.bone === bone);
+    const onBone = (bone: string) => parts.filter((l) => placedIn(rig, imp, view, l.name) && rig.views[view]?.pieces[l.name]?.bone === bone);
     const guesses = (imp.guessed ?? []).filter((n) => !confirmed.has(n) && parts.some((l) => l.name === n)).length;
     // Nodes with no spot on the figure (ones you made): listed under it.
     const spots = partSpots(kind);
@@ -132,19 +156,33 @@ export function mountMatcher(host: HTMLElement, imp: ImportResult, rig: Rig, onC
     const tray = h('div', { class: 'mt-tray' + (picked ? ' target' : ''), 'data-match-tray': '' },
       h('span', { class: 'px muted' }, waiting.length ? `${waiting.length} to place` : 'All placed'),
       h('div', { class: 'mt-tray-parts' }, ...waiting.map((l) => tile(l, 52))));
-    dropZone(tray, (layer) => attach(layer, rootNode(nodesOf(rig)).bone));
+    dropZone(tray, (layer) => attach(layer, rootNode(nodesOf(rig)).bone, true));
     const fresh = h('div', { class: 'mt-new' + (picked ? ' target' : ''), 'data-match-node': 'new' }, h('span', { class: 'px' }, '+ New node'), h('span', { class: 'meta' }, 'for a part with no spot: a tail, a hat, a prop'));
     dropZone(fresh, ownNode);
     host.replaceChildren(
       h('div', { class: 'mt-head' },
         h('h3', {}, 'Match your layers'),
-        views.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Angle' }, views.map((v) => h('button', {
-          class: v === view ? 'selected' : '', 'data-match-view': v, onclick: () => { view = v; picked = null; render(); },
-        }, VIEW_LABEL[v]))) : null,
         h('span', { class: 'grow' }),
-        h('div', { class: 'seg', role: 'group', 'aria-label': 'Rig' }, RIG_KINDS.map((k) => h('button', {
-          class: kind === k ? 'selected' : '', 'data-match-kind': k, onclick: () => { applyKind(rig, imp, k, 'high'); done(); },
+        h('span', { class: 'px muted' }, 'Body'),
+        h('div', { class: 'seg', role: 'group', 'aria-label': 'Body type' }, RIG_KINDS.map((k) => h('button', {
+          class: kind === k ? 'selected' : '', 'data-match-kind': k, onclick: () => {
+            applyKind(rig, imp, k, 'high'); imp.onRoot = [];
+            // A humanoid gets its parts placed by where they sit again; other bodies match by name, or by hand.
+            if (k === 'human' && unplacedLayers(imp, rig).length) guessByPlace(rig, imp);
+            refreshPoints(rig, imp); confirmed.clear(); done();
+          },
         }, RIG_KIND_LABEL[k])))),
+      h('div', { class: 'mt-head' },
+        h('span', { class: 'px muted' }, 'Profile'),
+        h('div', { class: 'seg', role: 'group', 'aria-label': 'Profile' }, VIEWS.map((v) => h('button', {
+          class: v === view ? 'selected' : '', 'data-match-view': v, disabled: !imp.views[v]?.length,
+          title: imp.views[v]?.length ? `${VIEW_LABEL[v]} drawing` : `No ${VIEW_LABEL[v]} drawing in these files`,
+          onclick: () => { view = v; picked = null; render(); },
+        }, VIEW_LABEL[v]))),
+        h('span', { class: 'grow' }),
+        h('label', { class: 'mt-is' }, h('span', { class: 'px muted' }, 'This drawing is'),
+          h('select', { id: 'match-is', onchange: (e: Event) => moveView(view, (e.target as HTMLSelectElement).value as ViewId) },
+            VIEWS.map((v) => h('option', { value: v, selected: v === view }, VIEW_LABEL[v]))))),
       h('p', { class: 'meta' }, waiting.length
         ? 'Drag each part onto where it belongs on the figure. (Or click a part, then a spot.)'
         : guesses ? `The parts marked ? were placed by where they sit in your drawing. Drag any that are wrong.` : 'Drag any part to another spot to change it.'),

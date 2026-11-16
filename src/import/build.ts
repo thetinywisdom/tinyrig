@@ -265,6 +265,8 @@ export function guessByPlace(rig: Rig, imp: ImportResult) {
       if (usedPiece.has(pr.piece) || usedBone.has(pr.bone) || pr.cost > 0.25) continue;
       usedPiece.add(pr.piece); usedBone.add(pr.bone);
       if (rv.pieces[pr.piece]) rv.pieces[pr.piece].bone = pr.bone;
+      // The hips are the root, where unplaced parts also wait: remember this one was placed there.
+      if (pr.bone === rootNode(nodesOf(rig)).bone) (imp.onRoot ??= []).push(pr.piece);
       guessed.push(pr.piece);
     }
     // Points for the nodes, now that their layers are known.
@@ -278,4 +280,23 @@ export function guessByPlace(rig: Rig, imp: ImportResult) {
     for (const limb of LIMBS) if (rv.pivots[limb.end]) rv.tips[limb.id] = { ...rv.pivots[limb.end] };
   }
   imp.guessed = guessed;
+}
+
+/** Work every node's point out again from the layers attached now (after parts were matched by hand). */
+export function refreshPoints(rig: Rig, imp: ImportResult) {
+  const nodes = nodesOf(rig), root = rootNode(nodes);
+  for (const v of VIEWS) {
+    const rv = rig.views[v];
+    if (!rv) continue;
+    for (const n of nodes) {
+      if (n === root) continue;
+      const at = guessNodePoint(rig, imp, v, n.id);
+      if (at) rv.pivots[n.id] = at;
+    }
+    const hips = [rv.pivots.hip_L, rv.pivots.hip_R].filter(Boolean) as Pt[];
+    const r = hips.length === 2 && (rig.kind ?? 'human') === 'human' ? round({ x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 }) : guessNodePoint(rig, imp, v, root.id);
+    if (r) rv.rootPivot = r;
+    rv.tips = {};
+    for (const limb of LIMBS) if (rv.pivots[limb.end]) rv.tips[limb.id] = { ...rv.pivots[limb.end] };
+  }
 }

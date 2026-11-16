@@ -1,6 +1,6 @@
 // Importer screen: open a file (whole character or part by part), confirm the
 // rig level, read the check report. Also shows the naming convention.
-import { buildRig, levelIssues } from '../import/build';
+import { buildRig, levelIssues, refreshPoints } from '../import/build';
 import { importPsd } from '../import/psd';
 import { importSvg, importSvgParts, viewOfFile } from '../import/svg';
 import { parsePartFileName, type RigLevel } from '../model/skeleton';
@@ -173,7 +173,7 @@ export function mountImporter(
       waiting ? matchBox : null,
       h('h3', {}, 'Check report'),
       issueList(found),
-      h('button', { class: 'primary', id: 'open-editor', onclick: () => onDone(current!, files, mode) }, 'Open in editor'),
+      h('button', { class: 'primary', id: 'open-editor', onclick: () => { if (waiting) refreshPoints(current!.rig, current!.imp); onDone(current!, files, mode); } }, 'Open in editor'),
     ].filter((n) => n !== null));
     review.scrollIntoView({ block: 'nearest' });
   }

@@ -250,8 +250,8 @@ footer.hint::before { content: ''; width: 8px; height: 8px; border-radius: 50%; 
 .chars-rig h2 { margin: 0; color: var(--ink); display: flex; justify-content: space-between; align-items: center; }
 .chars-rig h2 .muted { color: var(--muted); }
 .chars-rig .small { font-size: 12px; margin: 0; line-height: 1.4; }
-.chars-kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.chars-kinds button { height: 112px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; text-align: left; background: var(--ink); color: var(--tile); border-radius: var(--r-s); font-family: var(--pixel); font-size: 11px; text-transform: uppercase; }
+.chars-kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.chars-kinds button { height: 100px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; text-align: left; background: var(--ink); color: var(--tile); border-radius: var(--r-s); font-family: var(--pixel); font-size: 11px; text-transform: uppercase; }
 @media (hover: hover) and (pointer: fine) { .chars-kinds button:hover:not(:disabled) { background: #262626; } }
 .chars-kinds button.selected { box-shadow: inset 0 0 0 2px var(--accent); }
 .chars-kinds button.selected span:first-child { color: var(--accent); }
@@ -549,3 +549,5 @@ button.rec.on, button.rec:active { background: var(--accent); }
 .mt-name { font-size: 9px; color: var(--muted); white-space: nowrap; }
 .mt-spot.full .mt-name { color: var(--ink); }
 .mt-in { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
+.mt-is { display: inline-flex; align-items: center; gap: 8px; }
+.mt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; min-height: 200px; }

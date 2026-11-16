@@ -59,7 +59,7 @@ export interface Rig {
   /** The character's own rig. Missing means the human rig every older character has. */
   nodes?: RigNode[];
   /** Which starting rig the nodes began from. */
-  kind?: 'human' | 'two' | 'four';
+  kind?: 'human' | 'two' | 'four' | 'custom';
   /** Joint limits in degrees from the rest pose, [min, max]. Missing = free. */
   limits: Record<JointId, [number, number]>;
 }
@@ -141,4 +141,6 @@ export interface ImportResult {
   otherCharacters: string[];
   /** Layers placed on a node by where they sit, not by their name: shown for checking. */
   guessed?: string[];
+  /** Layers you put on the root node yourself (otherwise a layer on the root counts as not placed yet). */
+  onRoot?: string[];
 }
