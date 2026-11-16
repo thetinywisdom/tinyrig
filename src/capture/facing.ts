@@ -10,12 +10,18 @@ export interface Facing {
   view: ViewId;
   /** Which way the person looks, as you see the picture. Null when they face you or face away. */
   looks: 'left' | 'right' | null;
-  /** Shoulder width over torso height: about 0.8 facing you, 0.4 at 3/4, near 0 side-on. For tuning and display. */
+  /** Shoulder width over torso height: about 0.7 facing you, 0.4 at 3/4, near 0 side-on. For tuning and display. */
   width: number;
+  /** How far the body is turned from facing you, in degrees (0 facing you or away, 90 side-on), when depth was available. */
+  turn?: number;
 }
 
-/** How wide the shoulders look against the torso, at the thresholds between angles. */
-export const FRONT_FROM = 0.58, SIDE_BELOW = 0.26;
+/** Turn, in degrees, at the thresholds between angles (from depth). */
+export const QUARTER_FROM = 32, SIDE_FROM = 62;
+/** A smaller turn still counts as 3/4 when the shoulders also look narrow. A raised arm alone turns the shoulders 20-30 degrees. */
+export const QUARTER_WITH_NARROW = 20;
+/** Without depth: how wide the shoulders look against the torso, at the same thresholds. */
+export const FRONT_FROM = 0.5, SIDE_BELOW = 0.22;
 
 /**
  * Read the angle from body points in image pixels. With `mirror`, left and right are swapped, so the character
@@ -41,24 +47,29 @@ export function readFacing(points: Landmark[], opts: { mirror?: boolean; minVisi
   // Where the nose sits against the middle of the shoulders says which way the head and body turn.
   const turn = nose ? (nose.x - sx) / torso : 0;
 
+  // How far the body is turned: the shoulders' depth difference against their width in the picture.
+  const hasDepth = sL.z !== undefined && sR.z !== undefined;
+  const yaw = hasDepth ? (Math.atan2(Math.abs(sL.z! - sR.z!), Math.abs(sL.x - sR.x)) * 180) / Math.PI : null;
+  const band = yaw !== null ? (yaw >= SIDE_FROM ? 'side' : yaw >= QUARTER_FROM || (yaw >= QUARTER_WITH_NARROW && width < FRONT_FROM) ? 'turned' : 'square')
+    : width < SIDE_BELOW ? 'side' : width < FRONT_FROM ? 'turned' : 'square';
+
   let view: ViewId;
-  if (width >= FRONT_FROM) view = faceSeen || leftOnRight ? 'front' : 'back';
-  else if (width >= SIDE_BELOW) view = faceSeen ? 'quarter' : 'back';
+  if (band === 'square') view = faceSeen || leftOnRight ? 'front' : 'back';
+  else if (band === 'turned') view = faceSeen ? 'quarter' : 'back';
   else view = 'side';
-  if (view === 'back' && width < FRONT_FROM && faceSeen) view = 'quarter';
 
   let looks: Facing['looks'] = null;
   if (view === 'quarter' || view === 'side') {
     // The nose points the way they look. When it is unclear, depth decides: looking toward the left of the
     // picture means having turned so the left shoulder is nearer the camera (smaller z), and the reverse.
     const byNose = Math.abs(turn) > 0.04 ? Math.sign(turn) : 0;
-    const depth = sL.z !== undefined && sR.z !== undefined ? sL.z - sR.z : 0;
-    const byDepth = Math.abs(depth) > 0.02 ? Math.sign(depth) : 0;
+    const depth = hasDepth ? sL.z! - sR.z! : 0;
+    const byDepth = Math.abs(depth) > 0.05 * torso ? Math.sign(depth) : 0;
     const dir = byNose || byDepth;
     looks = dir < 0 ? 'left' : dir > 0 ? 'right' : 'left';
   }
   if (opts.mirror && looks) looks = looks === 'left' ? 'right' : 'left';
-  return { view, looks, width: Math.round(width * 100) / 100 };
+  return { view, looks, width: Math.round(width * 100) / 100, turn: yaw === null ? undefined : Math.round(yaw) };
 }
 
 /** Whether a drawing must be flipped to look the way the person looks. */

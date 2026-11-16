@@ -3,7 +3,7 @@
 import { unzipSync, zipSync } from 'fflate';
 import type { FileMap } from './project';
 
-const TOP_DIRS = ['characters', 'poses', 'controls', 'scenes', 'shots', 'backgrounds', 'sketches', 'audio', 'fonts'];
+const TOP_DIRS = ['characters', 'poses', 'controls', 'scenes', 'shots', 'backgrounds', 'sketches', 'photos', 'audio', 'fonts'];
 const ROOT_FILES = ['project.json', 'storyboard.json'];
 const IN_PROJECT = new RegExp(`(^|/)((${TOP_DIRS.join('|')})/|(${ROOT_FILES.map((f) => f.replace('.', '\\.')).join('|')})$)`);
 

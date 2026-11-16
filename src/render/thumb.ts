@@ -53,30 +53,31 @@ class ShotPictures {
     Object.assign(host.style, { position: 'fixed', left: '-10000px', top: '0', width: '320px', height: '180px', pointerEvents: 'none' });
     document.body.appendChild(host);
     this.stage = new StageView();
-    this.ready = this.stage.init(host);
+    // Pictures are drawn on request (renderFrame), so this hidden stage never needs to redraw itself each frame.
+    this.ready = this.stage.init(host).then(() => { this.stage!.app.ticker.stop(); });
     return this.ready;
   }
 
-  /** The cached picture of a shot, if it is still current. */
-  cached(shot: Shot): string | null {
-    const hit = this.cache.get(shot.name);
+  /** The cached picture of a shot (at a frame), if it is still current. */
+  cached(shot: Shot, frame?: number): string | null {
+    const hit = this.cache.get(`${shot.name}@${frame ?? 'mid'}`);
     return hit && hit.key === JSON.stringify(shot) ? hit.url : null;
   }
 
-  /** A JPEG data URL of the middle frame of the shot in the 16:9 framing, `width` pixels wide. Calls run one at a time. */
-  picture(project: Project, shot: Shot, width = 480): Promise<string> {
-    const key = JSON.stringify(shot), hit = this.cache.get(shot.name);
+  /** A JPEG data URL of one frame (the middle one by default) of the shot in the 16:9 framing, `width` pixels wide. Calls run one at a time. */
+  picture(project: Project, shot: Shot, width = 480, frame?: number): Promise<string> {
+    const key = JSON.stringify(shot), slot = `${shot.name}@${frame ?? 'mid'}`, hit = this.cache.get(slot);
     if (hit?.key === key) return Promise.resolve(hit.url);
     const run = this.queue.then(async () => {
-      const again = this.cache.get(shot.name);
+      const again = this.cache.get(slot);
       if (again?.key === key) return again.url;
       await this.init();
       const stage = this.stage!;
       await prepareStage(stage, project, shot, this.loaded);
       const format = formatById('yt'), camera = shot.cameras.yt;
-      stage.draw(finishedFrame(project, shot, Math.floor(shot.length / 2)), { format, camera });
+      stage.draw(finishedFrame(project, shot, frame ?? Math.floor(shot.length / 2)), { format, camera });
       const url = stage.renderFrame(format, camera, width / format.w).toDataURL('image/jpeg', 0.85);
-      this.cache.set(shot.name, { key, url });
+      this.cache.set(slot, { key, url });
       return url;
     });
     this.queue = run.catch(() => undefined);

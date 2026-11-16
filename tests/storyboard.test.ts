@@ -19,8 +19,8 @@ describe('storyboard', () => {
     const shot = { ...newShot('A'), length: 48 };
     sb.panels.push(newPanel('1', { duration: 3.2 }), newPanel('2', { duration: 9, shot: 'A' }));
     expect(panelSeconds(sb.panels[1], [shot])).toBe(2);
-    expect(summary(sb, [shot])).toBe('0:05 · 2 shots');
-    expect(summary({ ...sb, panels: [sb.panels[0]] }, [])).toBe('0:03 · 1 shot');
+    expect(summary(sb, [shot])).toBe('0:05 · 2 panels');
+    expect(summary({ ...sb, panels: [sb.panels[0]] }, [])).toBe('0:03 · 1 panel');
   });
 
   it('setting a duration resizes the shot in whole frames', () => {

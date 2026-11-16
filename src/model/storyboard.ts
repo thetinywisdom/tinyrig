@@ -1,6 +1,7 @@
 // The storyboard: the scene as a grid of panels, read like a comic page.
 // A project holds one scene. Each panel has a sketch, free-text notes and a duration,
 // and, once it is animated, the shot that brings it to life. No DOM here.
+import { actedFrames, type CastMember, type Moment, type PanelBackground } from './act';
 import { FPS, type AudioClip, type Shot } from './shot';
 
 export interface Panel {
@@ -15,7 +16,14 @@ export interface Panel {
   shot?: string;
   /** Part of the sample scene, removed by "Clear sample". */
   sample?: boolean;
+  /** Acted out: the characters in the panel and their poses, in order. */
+  cast?: CastMember[];
+  moments?: Moment[];
+  background?: PanelBackground;
 }
+
+/** Whether a panel has been acted out (it then shows its characters, not its sketch). */
+export const isActed = (p: Panel) => !!p.cast?.length && !!p.moments?.length;
 
 /** Sound lives on the scene, so a line or a piece of music plays straight across the cuts. */
 export type Lane = 'voice' | 'sfx' | 'music';
@@ -57,6 +65,7 @@ const shotOf = (panel: Panel, shots: Shot[]) => (panel.shot ? shots.find((s) => 
 
 /** Seconds, rounded to a tenth. A panel with a shot lasts as long as its shot. */
 export function panelSeconds(panel: Panel, shots: Shot[]): number {
+  if (isActed(panel)) return Math.round((actedFrames(panel.moments!) / FPS) * 10) / 10;
   const shot = shotOf(panel, shots);
   return Math.round((shot ? shot.length / FPS : panel.duration) * 10) / 10;
 }
@@ -77,10 +86,10 @@ export function formatRuntime(seconds: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
-/** Header line: "1:48 · 27 shots". */
+/** Header line: "1:48 · 27 panels". */
 export function summary(sb: Storyboard, shots: Shot[]): string {
   const n = sb.panels.length;
-  return `${formatRuntime(runtimeSeconds(sb, shots))} · ${n} ${n === 1 ? 'shot' : 'shots'}`;
+  return `${formatRuntime(runtimeSeconds(sb, shots))} · ${n} ${n === 1 ? 'panel' : 'panels'}`;
 }
 
 /** Move the panel at `from` so it ends up at index `to` (in the list after removal). */
@@ -116,6 +125,7 @@ export function freeShotName(base: string, shots: Shot[]): string {
 
 /** A panel's length in frames: its shot's length, or its typed duration. */
 export function panelFrames(panel: Panel, shots: Shot[]): number {
+  if (isActed(panel)) return actedFrames(panel.moments!);
   const shot = shotOf(panel, shots);
   return shot ? shot.length : Math.max(1, Math.round(panel.duration * FPS));
 }

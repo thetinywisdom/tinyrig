@@ -1,24 +1,24 @@
 // The storyboard: the home of a scene. A wrapping grid of panels, read like a comic page.
 // Each panel shows a sketch (or a frame of its shot once animated), free-text notes and a duration.
 // Everything here is undoable, so nothing asks for confirmation.
-import { FPS, uid } from '../model/shot';
+import { uid } from '../model/shot';
 import {
-  byFileName, dropOrphanClips, movePanel, newPanel, panelSeconds, setPanelSeconds, summary, type Panel, type Storyboard,
+  byFileName, dropOrphanClips, isActed, movePanel, newPanel, panelSeconds, setPanelSeconds, summary, type Panel, type Storyboard,
 } from '../model/storyboard';
 import type { CharacterEntry, Project } from '../project/project';
 import { pictures } from '../render/thumb';
 import { h } from './dom';
 import { EASE_OUT, enter } from './motion';
 import { clearSample } from './sample';
-import { recordingState, storeTake, toggleTake } from './sound';
-import { soundSeconds } from '../audio/record';
+import { compileActed } from '../model/act';
 
 export interface StoryboardContext {
   project: Project;
   onChanged: () => void;
   /** Open the panel's shot in the editor, making the shot first if it has none. */
   openPanel: (panel: Panel) => void;
-  importCharacter: (into: Panel | null) => void;
+  /** The Characters screen: import art and set joints. */
+  characters: () => void;
   menu: () => { label: string; run: () => void }[];
   saveState: () => string;
   status: () => string;
@@ -40,7 +40,7 @@ export class StoryboardView {
   private root = h('div', { class: 'storyboard' });
   private grid = h('div', { class: 'sb-grid', role: 'list', 'aria-label': 'Panels' });
   private top = h('header', { class: 'sb-top' });
-  private hint = h('footer', { class: 'hint' }, 'Click a panel to select it. Drag to reorder. Ctrl+D duplicates, Delete removes, Ctrl+V pastes an image. Double-click a panel to animate it.');
+  private hint = h('footer', { class: 'hint' }, 'Double-click a panel to act it out. Drag to reorder. Ctrl+D duplicates, Delete removes, Ctrl+V pastes a sketch.');
   private toastEl = h('div', { class: 'toast', role: 'status', hidden: true });
   private toastTimer = 0;
   private disposers: (() => void)[] = [];
@@ -117,8 +117,7 @@ export class StoryboardView {
   // --- helpers ---------------------------------------------------------------------
   private index(id: string) { return this.sb.panels.findIndex((p) => p.id === id); }
   private panel(id: string | null) { return this.sb.panels.find((p) => p.id === id) ?? null; }
-  private shotOf(p: Panel) { return p.shot ? this.ctx.project.shots.find((s) => s.name === p.shot) : undefined; }
-  private animated(p: Panel) { return !!this.shotOf(p)?.actors.length; }
+  private animated(p: Panel) { return isActed(p); }
 
   private sketchUrl(file: string): string | null {
     const bytes = this.ctx.project.assets.get(`sketches/${file}`);
@@ -182,8 +181,8 @@ export class StoryboardView {
     const i = this.index(id);
     if (i < 0) return;
     const src = this.sb.panels[i];
-    // The copy keeps the sketch, notes and length. A shot is not shared: the copy starts unanimated.
-    const copy = newPanel(uid(), { sketch: src.sketch, notes: src.notes, duration: panelSeconds(src, this.ctx.project.shots) });
+    // The copy keeps the sketch, notes, length and acted poses, ready to change.
+    const copy = newPanel(uid(), JSON.parse(JSON.stringify({ sketch: src.sketch, notes: src.notes, duration: panelSeconds(src, this.ctx.project.shots), cast: src.cast, moments: src.moments, background: src.background })));
     this.change(() => { this.sb.panels.splice(i + 1, 0, copy); this.selected = copy.id; }, animate);
   }
   remove(id: string, animate: boolean) {
@@ -221,7 +220,7 @@ export class StoryboardView {
         h('p', {}, 'This scene has no panels yet.'),
         h('div', { class: 'row' },
           h('button', { class: 'primary', id: 'sb-first', onclick: () => this.addPanel(0) }, 'Add a panel'),
-          h('button', { class: 'link', id: 'sb-import', onclick: () => this.ctx.importCharacter(null) }, 'Import a character')),
+          h('button', { class: 'link', id: 'sb-import', onclick: () => this.ctx.characters() }, 'Characters')),
         h('p', { class: 'meta' }, 'Or drop sketch files here: one panel per file, in filename order.')));
       return;
     }
@@ -239,30 +238,13 @@ export class StoryboardView {
       el.setAttribute('aria-selected', String(on));
       const p = on ? this.panel(el.dataset.id!) : null;
       if (p) {
-        const rec = recordingState(), here = rec.active && rec.panel === p.id;
         el.querySelector('.sb-pic')!.append(h('div', { class: 'sb-actions' },
-          h('button', { class: 'sb-record' + (here ? ' recording' : ''), id: 'sb-record', disabled: rec.active && !here,
-            title: 'Record a scratch take of this panel\'s line. The panel becomes as long as the take.',
-            onclick: (e: Event) => { e.stopPropagation(); void this.recordTake(p); } }, here ? `Stop ${rec.seconds.toFixed(1)}s` : 'Record line'),
           h('button', { class: 'sb-open', id: 'sb-open', onclick: (e: Event) => { e.stopPropagation(); this.ctx.openPanel(p); } },
-            this.animated(p) ? 'Open shot' : 'Animate')));
+            this.animated(p) ? 'Change the poses' : 'Act it out')));
       }
     }
   }
   private select(id: string | null) { this.selected = id; this.markSelection(); }
-
-  /** Record a scratch take on a panel, or stop and keep it. The panel becomes as long as the take. */
-  private async recordTake(p: Panel) {
-    await toggleTake(p.id,
-      (s) => { const b = this.grid.querySelector('#sb-record'); if (b) b.textContent = `Stop ${s.toFixed(1)}s`; },
-      async (take) => {
-        const seconds = (await soundSeconds(take.bytes)) ?? take.seconds;
-        this.change(() => { storeTake(this.ctx.project, p, take, seconds); });
-        this.toast(`Take kept on panel ${this.index(p.id) + 1}: ${seconds.toFixed(1)} s.`, true);
-      },
-      (message) => this.toast(message, false));
-    this.markSelection();
-  }
 
   private renderTop() {
     const { project } = this.ctx;
@@ -284,6 +266,7 @@ export class StoryboardView {
         this.change(() => { clearSample(project); this.selected = null; }, true);
         this.toast('Sample cleared.', true);
       } }, 'Clear sample') : null,
+      h('button', { id: 'sb-characters', onclick: () => this.ctx.characters() }, 'Characters'),
       h('span', { class: 'save-state', id: 'save-state', role: 'status' }, this.ctx.saveState()),
       h('details', { class: 'menu' },
         h('summary', {}, 'Project'),
@@ -302,7 +285,9 @@ export class StoryboardView {
     });
 
     // Duration: typed in, shown next to the panel number.
-    const dur = this.editing?.id === p.id && this.editing.field === 'duration'
+    // An acted panel is as long as its poses; a sketch has a typed length.
+    const dur = this.animated(p) ? h('span', { class: 'sb-dur fixed', title: 'Set by the poses' }, `${secs}s`)
+      : this.editing?.id === p.id && this.editing.field === 'duration'
       ? h('input', {
           type: 'number', class: 'sb-dur-input', min: 0.25, step: 0.1, value: secs, 'aria-label': `Panel ${i + 1} length in seconds`,
           onkeydown: (e: KeyboardEvent) => {
@@ -318,15 +303,14 @@ export class StoryboardView {
         })
       : h('button', { class: 'sb-dur', title: 'Change the length', onclick: (e: Event) => { e.stopPropagation(); this.selected = p.id; this.editing = { id: p.id, field: 'duration' }; this.render(); } }, `${secs}s`);
     const head = h('div', { class: 'sb-head' }, h('span', { class: 'sb-num' }, `#${i + 1}`), h('span', { class: 'sb-dot', 'aria-hidden': 'true' }, '·'), dur,
-      this.ctx.project.storyboard?.sound?.some((c) => c.take && c.panel === p.id) ? h('span', { class: 'sb-take', title: 'Has a scratch take' }, 'Take') : null,
-      this.animated(p) ? h('span', { class: 'sb-badge' }, `${Math.round(secs * FPS)} frames`) : null);
+      this.animated(p) ? h('span', { class: 'sb-badge' }, `${p.moments!.length} ${p.moments!.length === 1 ? 'pose' : 'poses'}`) : null);
 
     // Picture: a frame of the shot once animated (unless sketches are asked for), else the sketch.
     const pic = h('div', { class: 'sb-pic' });
     const showFrame = this.animated(p) && !(this.sb.showSketches && p.sketch);
     if (showFrame) {
       const img = h('img', { alt: `Frame from panel ${i + 1}`, draggable: false });
-      const shot = this.shotOf(p)!, cached = pictures.cached(shot);
+      const shot = compileActed(`panel:${p.id}`, { cast: p.cast!, moments: p.moments!, background: p.background }), cached = pictures.cached(shot);
       if (cached) img.src = cached;
       else void pictures.picture(project, shot).then((url) => { img.src = url; }).catch(() => undefined);
       pic.append(img);

@@ -6,7 +6,7 @@ import { JOINTS, type JointId } from '../model/skeleton';
 import type { Pt, RigView } from '../model/types';
 
 /** A tracked point in image pixels, with how sure the tracker is that it can see it (0..1). */
-export interface Landmark { x: number; y: number; visibility: number; /** Depth from the tracker: smaller is nearer the camera. Roughly in image widths. */ z?: number }
+export interface Landmark { x: number; y: number; visibility: number; /** Depth from the tracker, in about the same pixels as x: smaller is nearer the camera. */ z?: number }
 
 /** Indices in the MediaPipe pose model. "Left" is the person's own left. */
 const P = {

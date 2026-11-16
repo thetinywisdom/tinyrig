@@ -28,8 +28,16 @@ describe('reading the angle from a photo', () => {
     expect(readFacing(person({ width: 20, nose: -50 }))).toMatchObject({ view: 'side', looks: 'left' });
   });
   it('side with the nose unclear: the nearer shoulder decides', () => {
-    expect(readFacing(person({ width: 20, nose: 0, zL: -0.2, zR: 0.1 }))?.looks).toBe('left');
-    expect(readFacing(person({ width: 20, nose: 0, zL: 0.1, zR: -0.2 }))?.looks).toBe('right');
+    expect(readFacing(person({ width: 20, nose: 0, zL: -60, zR: 40 }))?.looks).toBe('left');
+    expect(readFacing(person({ width: 20, nose: 0, zL: 40, zR: -60 }))?.looks).toBe('right');
+  });
+  it('with depth, the turn of the shoulders decides the angle, not their width', () => {
+    // Narrow-shouldered but square to the camera: still the front.
+    expect(readFacing(person({ width: 90, zL: -2, zR: 3 }))).toMatchObject({ view: 'front', turn: 3 });
+    // Turned about 45 degrees.
+    expect(readFacing(person({ width: 90, nose: -20, zL: -45, zR: 45 }))?.view).toBe('quarter');
+    // Turned almost fully.
+    expect(readFacing(person({ width: 40, nose: -30, zL: -60, zR: 60 }))?.view).toBe('side');
   });
   it('mirror swaps the way they look', () => {
     expect(readFacing(person({ width: 90, nose: -30 }), { mirror: true })?.looks).toBe('right');

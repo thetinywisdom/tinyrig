@@ -2,7 +2,8 @@
 // Panel 1 is finished (the placeholder character waves), panels 2 and 3 are rough sketches.
 // "Clear sample" removes all of it.
 import { placeActor } from '../model/actor';
-import { newShot, setKey, uid } from '../model/shot';
+import type { Moment } from '../model/act';
+import { newShot, uid } from '../model/shot';
 import { newPanel, type Panel } from '../model/storyboard';
 import type { Pose } from '../model/types';
 import type { Project } from '../project/project';
@@ -105,19 +106,21 @@ export async function addSample(project: Project): Promise<Panel[]> {
   const name = data.rig.name;
   if (!project.characters.some((c) => c.name === name)) project.characters.push({ name, mode: 'whole', files, data });
 
-  const shot = { ...newShot('Sample wave'), length: 48 };
-  const actor = placeActor(shot, name, data.rig);
-  if (actor) {
-    shot.actors.push(actor);
-    for (const [frame, pose] of wavePoses(actor.base)) setKey(actor, frame, pose, 'ease');
-  }
-  project.shots = project.shots.filter((s) => s.name !== shot.name).concat(shot);
+  // Panel 1 is acted out already: the placeholder character waves, pose to pose.
+  const placed = placeActor(newShot('sample'), name, data.rig);
+  const castId = uid();
+  const cast = placed ? [{ id: castId, character: name, root: placed.base.root, scale: placed.base.scale ?? 1 }] : [];
+  const steps = placed ? wavePoses(placed.base).filter(([f]) => [0, 10, 16, 22, 47].includes(f)) : [];
+  const moments: Moment[] = steps.map(([, pose], i) => ({
+    id: uid(), hold: i === 0 || i === steps.length - 1 ? 0.3 : 0.05, move: 0.25,
+    poses: { [castId]: { view: pose.view, flip: pose.flip, rootAngle: pose.rootAngle, angles: { ...pose.angles } } },
+  }));
 
   const [desk, phone] = await Promise.all([deskSketch(), phoneSketch()]);
   project.assets.set('sketches/sample_desk.png', desk);
   project.assets.set('sketches/sample_phone.png', phone);
   return [
-    newPanel(uid(), { sample: true, shot: shot.name, duration: 2, notes: 'A turns to camera and waves.\nCamera: medium shot, still.' }),
+    newPanel(uid(), { sample: true, cast, moments, duration: 2, notes: 'A turns to camera and waves.\nCamera: medium shot, still.' }),
     newPanel(uid(), { sample: true, sketch: 'sample_desk.png', duration: 4, notes: 'A and B at the desk.\nA: Did you see this?\nB: Not yet. Show me.\nCamera: slow push-in.' }),
     newPanel(uid(), { sample: true, sketch: 'sample_phone.png', duration: 1.5, notes: 'Close-up: the phone buzzes on the desk.\nSound: phone buzz.' }),
   ];
@@ -132,6 +135,6 @@ export function clearSample(project: Project) {
   const shots = new Set(gone.map((p) => p.shot).filter(Boolean));
   project.shots = project.shots.filter((s) => !shots.has(s.name));
   for (const p of gone) if (p.sketch && !sb.panels.some((q) => q.sketch === p.sketch)) project.assets.delete(`sketches/${p.sketch}`);
-  const used = new Set(project.shots.flatMap((s) => s.actors.map((a) => a.character)));
+  const used = new Set(sb.panels.flatMap((p) => (p.cast ?? []).map((c) => c.character)));
   project.characters = project.characters.filter((c) => used.has(c.name) || !c.files.some((f) => f.name === SAMPLE_CHARACTER_FILE));
 }

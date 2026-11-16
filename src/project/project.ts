@@ -6,7 +6,7 @@
 //   scenes/<name>.json                          scene templates
 //   shots/<name>.json                           a scene plus its timeline, sound and text
 //   backgrounds/ audio/ fonts/                  the files shots use
-//   storyboard.json  sketches/                  the scene's panels and their sketches
+//   storyboard.json  sketches/  photos/         the scene's panels, their sketches and the photos you acted them from
 // The same file map is written to a real folder, a zip, or the browser's own storage.
 import type { Pad } from '../model/pads';
 import type { SceneTemplate, Shot } from '../model/shot';
@@ -106,7 +106,7 @@ export async function filesToProject(files: FileMap, onProgress?: (text: string)
     const scene = parse<SceneTemplate>(path);
     if (scene?.stage) project.scenes.push(scene);
   }
-  for (const [path, bytes] of files) if (/^(backgrounds|sketches|audio|fonts)\//.test(path)) project.assets.set(path, bytes);
+  for (const [path, bytes] of files) if (/^(backgrounds|sketches|photos|audio|fonts)\//.test(path)) project.assets.set(path, bytes);
   const sb = parse<Storyboard>('storyboard.json');
   if (sb && Array.isArray(sb.panels)) project.storyboard = sb;
   project.googleFonts = parse<{ googleFonts?: string[] }>('project.json')?.googleFonts ?? [];
