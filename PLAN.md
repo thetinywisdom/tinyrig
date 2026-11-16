@@ -60,7 +60,7 @@ The owner rejected the earlier editor as too complex: **every new control has to
 | 3c. Rigs of your own | Done. Named nodes per character (`Rig.nodes`), starting rigs human / 2 legs / 4 legs at Simple / Medium / Complex, drag-to-connect, add, rename, remove, layer-to-node, name matching. Layers with any name import as parts. |
 | 3d. Scenes: Rig and Animate tabs, layers, camera keys, project size, scene rig tweaks | Done. `src/model/scene.ts`, `src/ui/scene.ts`, `src/ui/animate.ts`. Older acted panels move onto lanes and layers when opened. |
 | 3e. Who is who: one photo with two people driving two characters | **Next** (the tracker reads one person so far). |
-| 4. Webcam takes (a few seconds of video, key poses picked) | Not started. |
+| 4. Record (webcam takes) | Done. **● Record** on a character's lane: count-in, the character follows you live while the other lanes and the camera play from the playhead; Stop makes key poses (where the motion turns or pauses, each with its webcam frame) or, with **Every frame**, one block that plays the take as acted. A take replaces what it covers and moves into and out of the poses around it (`takeToPoses`, `spliceTake`). |
 | 5. Video export of the storyboard | Done. **Export video** on the storyboard: one MP4 (H.264 where the browser has it) or PNG frames, at the project size. Each scene through its camera; scenes not animated yet show their sketch. `src/export/episode.ts`. No sound yet. |
 | 6. Tune the angle thresholds on the owner's real photos | Waiting for photos. |
 
@@ -101,7 +101,8 @@ Project files: as before plus `photos/` (the photos you acted from) and `storybo
 npm install && npm run dev        # http://localhost:5173
 npm test                          # unit tests
 node scripts/check.mjs check-output                     # browser check, a few minutes
-node scripts/check.mjs check-output act characters      # chosen sections: storyboard import act characters save
+node scripts/check.mjs check-output act characters      # chosen sections: storyboard import act characters record save
+# record needs ffmpeg: it makes a fake webcam video from the two test photos
 ```
 
 The act check uses `scripts/fixtures/pose-photo.png`, the placeholder drawn in a known pose, so it does not

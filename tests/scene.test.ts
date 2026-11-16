@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraAt, compileScene, DEFAULT_SIZE, laneTimes, resizeCamera, sceneSeconds, stackOf, upgradeScene, type SceneData } from '../src/model/scene';
+import { BLEND, cameraAt, compileScene, DEFAULT_SIZE, laneTimes, resizeCamera, sceneSeconds, spliceTake, stackOf, takeToPoses, upgradeScene, type SceneData } from '../src/model/scene';
 
 const pose = (a = 0) => ({ view: 'front' as const, flip: false, rootAngle: 0, angles: { elbow_L: a } });
 const cast = [{ id: 'm', character: 'Momo', root: { x: 0, y: 0 }, scale: 1 }, { id: 'c', character: 'Cat', root: { x: 0, y: 0 }, scale: 1 }];
@@ -62,5 +62,49 @@ describe('scenes', () => {
     const shot = compileScene('s', s, DEFAULT_SIZE);
     expect(shot.order).toEqual(['sky', 'm', 'leaves', 'c']);
     expect(Object.keys(shot.cameras)).toEqual(['size-1920x1080']);
+  });
+});
+
+describe('recording', () => {
+  const at = (deg: number) => ({ view: 'front' as const, flip: false, rootAngle: 0, angles: { elbow_L: deg } });
+  let n = 0;
+  const id = () => `p${++n}`;
+  // An elbow that bends from 0 to 90 over a second, holds still for a second, then straightens.
+  const samples = Array.from({ length: 61 }, (_, i) => {
+    const t = i / 20;
+    const deg = t < 1 ? t * 90 : t < 2 ? 90 : Math.max(0, 90 - (t - 2) * 90);
+    return { t, pose: at(deg) };
+  });
+
+  it('keeps the key poses of a take, holding where you held still', () => {
+    const out = takeToPoses(samples, { id, tolerance: 12 });
+    const degs = out.map((x) => Math.round(x.lp.pose.angles.elbow_L));
+    expect(degs[0]).toBe(0);
+    expect(degs.some((d) => d > 80)).toBe(true);
+    expect(degs.at(-1)).toBeLessThan(10);
+    expect(out.length).toBeLessThan(8); // not every frame
+    const still = out.find((x) => x.lp.pose.angles.elbow_L > 80)!;
+    expect(still.lp.hold).toBeGreaterThan(0.7); // the second you held still
+  });
+
+  it('or keeps every frame in one block', () => {
+    const out = takeToPoses(samples, { id, everyFrame: true });
+    expect(out).toHaveLength(1);
+    expect(out[0].lp.frames).toHaveLength(61);
+    expect(out[0].lp.hold).toBe(3);
+  });
+
+  it('a take replaces what it covers and moves in and out of the poses around it', () => {
+    const lane = { start: 0, poses: [
+      { id: 'a', hold: 1, move: 0.5, pose: at(1) }, { id: 'b', hold: 1, move: 0.5, pose: at(2) },
+      { id: 'c', hold: 1, move: 0.5, pose: at(3) }, { id: 'd', hold: 1, move: 0.5, pose: at(4) },
+    ] }; // starts 0, 1.5, 3, 4.5
+    spliceTake(lane, 1.2, [{ start: 0, lp: { id: 'x', hold: 0.5, move: 0.5, pose: at(50) } }, { start: 1, lp: { id: 'y', hold: 0.5, move: 0.5, pose: at(60) } }]);
+    expect(lane.poses.map((p) => p.id)).toEqual(['a', 'x', 'y', 'c', 'd']);
+    const t = laneTimes(lane);
+    expect(t[0].holdEnd).toBeCloseTo(0.95); // a stops holding in time to move into the take
+    expect(t[1].start).toBeCloseTo(1.2);
+    expect(t[3].start - t[2].holdEnd).toBeGreaterThanOrEqual(BLEND - 1e-9); // and c is reached by a move, not a cut
+    expect(t[3].start).toBeCloseTo(3);
   });
 });

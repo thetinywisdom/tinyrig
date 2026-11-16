@@ -1,5 +1,5 @@
 // End-to-end check in a real browser. Needs `npm run dev` running.
-//   node scripts/check.mjs [outDir] [section...]     sections: storyboard import act characters save
+//   node scripts/check.mjs [outDir] [section...]     sections: storyboard import act characters record save
 import { createRequire } from 'node:module';
 import { mkdirSync, writeFileSync } from 'node:fs';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -362,6 +362,58 @@ if (want('act')) {
   ok('the export sheet says what it made', /\.mp4/.test(await page.textContent('#export-done')));
   await page.screenshot({ path: `${out}/export-done.png` });
   await page.keyboard.press('Escape');
+}
+
+// --- record: a fake webcam (a short video of the two test photos) drives the character live --------------
+if (want('record')) {
+  const { execFileSync } = await import('node:child_process');
+  const fake = `${out}/fake-webcam.y4m`;
+  let haveFfmpeg = true;
+  try {
+    const dir = new URL('./fixtures/', import.meta.url).pathname;
+    // 1.5 s of one pose, 1.5 s of the other, looping: a person who moves, as the webcam would see them.
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-loop', '1', '-t', '1.5', '-i', `${dir}pose-photo.png`, '-loop', '1', '-t', '1.5', '-i', `${dir}half-photo.png`,
+      '-filter_complex', '[0][1]scale2ref=oh*mdar:ih[a][b];[a]scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1[x];[b]scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1[y];[x][y]concat=n=2:v=1,fps=15,hflip',
+      '-pix_fmt', 'yuv420p', '-f', 'yuv4mpegpipe', fake]);
+  } catch { haveFfmpeg = false; }
+  if (!haveFfmpeg) console.log('    (record: skipped, ffmpeg is not installed)');
+  else {
+    const rb = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${fake}`] });
+    const context = await rb.newContext({ viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(APP);
+    await page.click('#new-scene'); await page.waitForSelector('.sb-panel');
+    await page.dblclick('.sb-panel >> nth=0 >> .sb-head');
+    await page.waitForSelector('#act-record');
+    const lane = () => page.evaluate(() => { const a = window.__anim; return Object.values(a.p.lanes)[0].poses.map((p) => ({ photo: p.photo ?? '', frames: p.frames?.length ?? 0, hold: p.hold })); });
+    const before = (await lane()).length;
+    await page.click('#act-record');
+    await page.waitForSelector('.rec-pane');
+    ok('Record counts in, then shows the webcam', await page.locator('.rec-video').count() === 1);
+    await page.waitForTimeout(2600 + 4500);
+    const followed = await page.evaluate(() => !!window.__anim.rec?.live);
+    ok('while recording, the character follows the webcam live', followed);
+    await page.screenshot({ path: `${out}/record-live.png` });
+    await page.click('#rec-stop');
+    await page.waitForTimeout(800);
+    const after = await lane();
+    console.log(`    recorded: ${after.length} poses (was ${before}), holds ${after.map((p) => p.hold).join(' ')}`);
+    ok('Stop turns the take into key poses in the lane, with their webcam frames', after.some((p) => p.photo.startsWith('take_')) && after.filter((p) => p.photo.startsWith('take_')).length >= 2, JSON.stringify(after));
+    await page.screenshot({ path: `${out}/record-done.png` });
+    // Every frame: one block that plays the take as acted.
+    await page.click('#rec-every');
+    await page.click('#act-record');
+    await page.waitForTimeout(2600 + 3000);
+    await page.click('#rec-stop');
+    await page.waitForTimeout(800);
+    const frames = await lane();
+    ok('with Every frame on, the take is one block with every frame', frames.some((p) => p.frames > 10), JSON.stringify(frames.map((p) => p.frames)));
+    ok('a recorded block looks different (striped)', await page.locator('.tl .blk.rec').count() >= 1);
+    await page.keyboard.press('Control+z');
+    ok('undo takes the recording back out', (await lane()).every((p) => p.frames === 0));
+    await rb.close();
+  }
 }
 
 // --- save: reload keeps the scene and its photos ------------------------------------------

@@ -466,3 +466,17 @@ details.naming > summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
 .export-fill { display: block; height: 100%; width: 0; background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 6px); }
 .export-done b { font-weight: 600; }
 .export-done::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
+
+/* Record */
+button.rec { font-family: var(--pixel); font-size: 11px; text-transform: uppercase; }
+button.rec.on, button.rec:active { background: var(--accent); }
+.rec-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.rec-frame { flex: 1; min-height: 0; position: relative; display: grid; place-items: center; background: #111; border: 1px solid var(--ink); border-radius: 6px; overflow: hidden; }
+.rec-video { max-width: 100%; max-height: 100%; transform: scaleX(-1); display: block; }
+.rec-count { color: var(--accent); }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: rec-blink 1s steps(2, start) infinite; }
+@keyframes rec-blink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+/* A recorded every-frame block: lines like a film strip. */
+.tl .blk.rec { background: var(--ink) repeating-linear-gradient(90deg, transparent 0 5px, rgba(233, 233, 229, 0.35) 5px 6px); }
+.tl .blk.rec.on { background: var(--accent) repeating-linear-gradient(90deg, transparent 0 5px, rgba(17, 17, 17, 0.35) 5px 6px); }

@@ -27,6 +27,9 @@ npm test           # unit tests
      as layers (a sky, a room, leaves in front) and drag lanes to change what is in front. The **camera** is a frame
      on an endless canvas: add keys, and it moves or cuts between them. Only what is inside the frame is exported.
      **From the waist up works too**: parts outside the photo keep the pose they had.
+   - **● Record**: act in front of the webcam while the character follows you live. Stop, and the take becomes key
+     poses on the timeline (or, with **Every frame**, one block played exactly as you acted). Recording over poses
+     replaces them, and the character moves smoothly into and out of the take.
 4. **Export video** (on the storyboard): the whole storyboard as one MP4 at the project size, or PNG frames.
    Scenes not animated yet show their sketch for their length.
 

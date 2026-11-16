@@ -9,7 +9,8 @@ import type { Landmark } from '../capture/mapping';
 import { detectPose } from '../capture/tracker';
 import type { ActedPose } from '../model/act';
 import {
-  addCast, cameraAt, compileScene, frameHeight, laneTimes, newLanePose, sceneSeconds, sizeLabel, stackOf,
+  addCast, cameraAt, compileScene, frameHeight, laneTimes, newLanePose, sceneSeconds, sizeLabel, spliceTake, stackOf, takeToPoses,
+  type TakeSample,
   type CameraCurve, type CameraKey, type ImageLayer, type LanePose, type ProjectSize, type StackEntry,
 } from '../model/scene';
 import { FPS, uid } from '../model/shot';
@@ -94,7 +95,14 @@ export class AnimateView {
   }
 
   private get size() { return this.ctx.size(); }
-  private shot(t = this.t) { return compileScene(`scene:${this.p.id}`, this.p, this.size, { t, minSeconds: 0.5 }); }
+  private shot(t = this.t) {
+    const shot = compileScene(`scene:${this.p.id}`, this.p, this.size, { t, minSeconds: Math.max(0.5, t + 0.1) });
+    // While recording, the character you act for follows you live.
+    const live = this.rec?.live;
+    const a = live && shot.actors.find((x) => x.id === this.rec!.cast);
+    if (a && live) { a.keys = []; a.base = { ...a.base, view: live.view, flip: live.flip, rootAngle: live.rootAngle, angles: { ...live.angles }, swaps: live.swaps }; }
+    return shot;
+  }
   private seconds() { return sceneSeconds(this.p); }
   private castOf(id: string | null | undefined) { return this.p.cast!.find((c) => c.id === id) ?? null; }
   private rigOfCast(id: string | null | undefined) { const c = this.castOf(id); return c ? this.ctx.rigOf(c.character) : null; }
@@ -354,6 +362,7 @@ export class AnimateView {
 
   private renderLeft() {
     const s = this.sel;
+    if (this.rec) { this.left.replaceChildren(this.rec.view); return; }
     if (this.busy) { this.left.replaceChildren(h('div', { class: 'act-card' }, h('p', { class: 'act-busy', role: 'status' }, this.busy))); return; }
     if (!this.p.cast!.length) {
       const chars = this.ctx.project.characters;
@@ -398,7 +407,8 @@ export class AnimateView {
           onchange: (e: Event) => { const n = Number((e.target as HTMLInputElement).value); if (Number.isFinite(n)) this.change(() => { lp.hold = Math.max(0, Math.min(20, n)); }); },
         }), h('span', {}, 's')),
         h('button', { id: 'act-remove', onclick: () => this.removeSelected() }, 'Remove')));
-    this.renderPhoto(lp, castId, i);
+    if (lp.frames?.length) this.photoBox.replaceChildren(h('p', { class: 'muted act-nophoto' }, `A recorded take: ${lp.frames.length} frames, played as you acted them. Record again over it, or turn Every frame off to get key poses you can edit.`));
+    else this.renderPhoto(lp, castId, i);
   }
 
   private renderCameraPanel() {
@@ -524,7 +534,14 @@ export class AnimateView {
       items.push(
         h('button', { id: 'cam-through', class: this.through ? 'selected' : '', 'aria-pressed': String(this.through), onclick: () => { this.through = !this.through; this.fitted = false; this.renderStageBar(); void this.drawStage(); } }, 'See through camera'),
         h('button', { class: 'primary', id: 'cam-key', onclick: () => this.change(() => { const k = this.keyHere(); this.sel = { kind: 'camera', id: k.id }; }) }, '+ Key here'));
-    } else if (lp && castId) {
+    }
+    if (castId && s?.kind !== 'camera') {
+      items.push(
+        h('button', { id: 'act-record', class: 'rec' + (this.rec ? ' on' : ''), onclick: () => (this.rec ? this.stopRecording() : void this.startRecording()) }, this.rec ? '■ Stop' : '● Record'),
+        h('button', { id: 'rec-every', class: this.everyFrame ? 'selected' : '', 'aria-pressed': String(this.everyFrame), title: 'Off: the take becomes key poses you can edit. On: keep every frame as acted.',
+          onclick: () => { this.everyFrame = !this.everyFrame; this.renderStageBar(); } }, 'Every frame'));
+    }
+    if (s?.kind === 'camera') { /* camera buttons above */ } else if (lp && castId) {
       items.push(
         views.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Angle' }, views.map((v) => h('button', {
           class: lp.pose.view === v ? 'selected' : '', 'data-view': v,
@@ -704,7 +721,7 @@ export class AnimateView {
         rows.push(this.laneName(entry, idx, c.character, String(lane.poses.length), on));
         const blocks = lane.poses.map((lp, i) => {
           const sel = this.sel?.kind === 'pose' && this.sel.cast === c.id && this.sel.i === i;
-          const b = h('div', { class: 'blk' + (sel ? ' on' : ''), 'data-pose': `${c.id}:${i}`, style: `left:${pct(times[i].start)};width:${pct(Math.max(0.05, lp.hold))}` },
+          const b = h('div', { class: 'blk' + (sel ? ' on' : '') + (lp.frames?.length ? ' rec' : ''), 'data-pose': `${c.id}:${i}`, title: lp.frames?.length ? 'Recorded: every frame kept' : undefined, style: `left:${pct(times[i].start)};width:${pct(Math.max(0.05, lp.hold))}` },
             h('span', { class: 'px' }, String(i + 1).padStart(2, '0')), h('span', { class: 'px dur' }, fmt(lp.hold)), h('i', { class: 'edge' }));
           this.bindBlock(b, c.id, i, span);
           return b;
@@ -911,6 +928,108 @@ export class AnimateView {
     });
   }
 
+  // --- recording -----------------------------------------------------------------------------
+  private everyFrame = false;
+  private rec: {
+    cast: string; at: number; view: HTMLElement; stream: MediaStream; video: HTMLVideoElement; started: number | null;
+    samples: (TakeSample & { blob?: Promise<Blob | null> })[]; live: ActedPose | null; stopped: boolean; clock: HTMLElement; found: number;
+  } | null = null;
+
+  /**
+   * Record: the webcam watches you act, the character follows live, and the other lanes and the camera play along
+   * from the playhead. Stop turns the take into key poses (or one every-frame block) in the character's lane.
+   */
+  private async startRecording() {
+    const castId = this.who, rig = this.rigOfCast(castId);
+    if (!castId || !rig || this.rec) return;
+    if (this.playing) this.stopPlay();
+    let stream: MediaStream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } }); } catch { this.say('The webcam is not available. Allow it for this page to record.'); return; }
+    const video = h('video', { autoplay: true, muted: true, playsInline: true, class: 'rec-video' });
+    video.srcObject = stream;
+    const count = h('div', { class: 'cam-count rec-count', 'aria-live': 'assertive' });
+    const clock = h('span', { class: 'px' }, '0.0s');
+    const view = h('div', { class: 'rec-pane' },
+      h('div', { class: 'act-label' }, h('span', { class: 'rec-dot' }), h('b', {}, 'Recording'), h('span', { class: 'chip k' }, this.castOf(castId)!.character), clock, h('span', { class: 'grow' }),
+        h('span', { class: 'px muted' }, this.everyFrame ? 'every frame' : 'key poses')),
+      h('div', { class: 'rec-frame' }, video, count),
+      h('div', { class: 'act-bar' }, h('span', { class: 'hint px' }, 'Act it out. Space or Stop ends the take.'), h('span', { class: 'grow' }),
+        h('button', { class: 'primary', id: 'rec-stop', onclick: () => this.stopRecording() }, '■ Stop')));
+    this.rec = { cast: castId, at: this.t, view, stream, video, started: null, samples: [], live: null, stopped: false, clock, found: 0 };
+    this.render();
+    // Count in, then go.
+    for (let n = 3; n > 0; n--) { if (this.rec?.stopped !== false) return; count.textContent = String(n); await new Promise((r) => setTimeout(r, 700)); }
+    count.textContent = '';
+    if (!this.rec || this.rec.stopped) return;
+    const rec = this.rec;
+    rec.started = performance.now();
+    const canvas = document.createElement('canvas');
+    let prev = this.laneOf(castId).poses.at(-1)?.pose ?? null;
+    const step = async () => {
+      if (!this.rec || this.rec !== rec || rec.stopped) return;
+      const now = (performance.now() - rec.started!) / 1000;
+      if (now > 60) { this.stopRecording(); return; }
+      rec.clock.textContent = fmt(now);
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (vw && vh) {
+        // A small copy of the frame, as you see yourself, for the tracker and to keep with key poses.
+        const w = 640, hgt = Math.round((vh / vw) * 640);
+        canvas.width = w; canvas.height = hgt;
+        const g = canvas.getContext('2d')!;
+        g.setTransform(-1, 0, 0, 1, w, 0);
+        g.drawImage(video, 0, 0, w, hgt);
+        let points: Landmark[] | null = null;
+        try { points = await detectPose(canvas, w, hgt); } catch { points = null; }
+        if (points && !rec.stopped) {
+          const pose = poseFromPoints(points, rig, { size: { w, h: hgt }, current: prev ?? undefined });
+          prev = pose;
+          rec.live = pose;
+          rec.found++;
+          const blob = new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.8));
+          rec.samples.push({ t: now, pose, points, size: { w, h: hgt }, blob });
+        }
+      }
+      void this.drawStage(rec.at + now);
+      const ph = this.tl.querySelector<HTMLElement>('.playhead');
+      if (ph) ph.style.left = `${((rec.at + now) / this.span()) * 100}%`;
+      requestAnimationFrame(() => void step());
+    };
+    void step();
+  }
+
+  private async stopRecording() {
+    const rec = this.rec;
+    if (!rec || rec.stopped) return;
+    rec.stopped = true;
+    rec.stream.getTracks().forEach((t) => t.stop());
+    this.rec = null;
+    if (!rec.started || rec.samples.length < 2) {
+      this.render();
+      this.say(rec.started ? 'Nobody was found in the webcam. Stand back so your body is in the picture, and try again.' : 'Recording stopped.');
+      return;
+    }
+    // Key poses (or one every-frame block), each key pose keeping the webcam frame it came from.
+    rec.samples.forEach((s, i) => { s.photo = `#${i}`; });
+    const take = takeToPoses(rec.samples, { everyFrame: this.everyFrame, id: uid, tolerance: 12 });
+    for (const { lp } of take) {
+      const i = lp.photo?.startsWith('#') ? Number(lp.photo.slice(1)) : -1;
+      const blob = i >= 0 ? await rec.samples[i].blob : null;
+      if (blob) {
+        const name = this.freeName('photos', `take_${this.castOf(rec.cast)!.character}.jpg`);
+        this.ctx.project.assets.set(`photos/${name}`, new Uint8Array(await blob.arrayBuffer()));
+        lp.photo = name;
+      } else delete lp.photo;
+    }
+    this.change(() => {
+      const lane = this.laneOf(rec.cast);
+      spliceTake(lane, rec.at, take);
+      const first = lane.poses.indexOf(take[0].lp);
+      this.sel = { kind: 'pose', cast: rec.cast, i: Math.max(0, first) };
+      this.t = rec.at;
+    });
+    this.say(this.everyFrame ? `Recorded ${fmt(take[0].lp.hold)} as one block, every frame kept.` : `Recorded ${take.length} key ${take.length === 1 ? 'pose' : 'poses'}. Drag them to change the timing.`);
+  }
+
   // --- playing -------------------------------------------------------------------------------
   play() {
     if (this.playing) { this.stopPlay(); return; }
@@ -958,6 +1077,7 @@ export class AnimateView {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) this.restore(this.redoStack, this.undoStack); else this.restore(this.undoStack, this.redoStack); return; }
       if (mod || e.altKey) return;
+      if (this.rec && (e.code === 'Space' || e.key === 'Escape')) { e.preventDefault(); this.stopRecording(); return; }
       if (e.code === 'Space') { e.preventDefault(); this.play(); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.removeSelected(); return; }
       const s = this.sel;
@@ -977,6 +1097,7 @@ export class AnimateView {
   dispose() {
     this.disposed = true;
     this.playing = false;
+    if (this.rec) { this.rec.stopped = true; this.rec.stream.getTracks().forEach((t) => t.stop()); this.rec = null; }
     cancelAnimationFrame(this.raf);
     for (const d of this.disposers) d();
     for (const u of this.photoUrls.values()) URL.revokeObjectURL(u);
