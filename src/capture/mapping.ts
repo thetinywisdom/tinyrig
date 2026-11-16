@@ -30,7 +30,7 @@ export interface CaptureResult { rootAngle: number | null; angles: Record<JointI
  */
 export function landmarksToPose(
   points: Landmark[], view: RigView, unlocked: Set<JointId>, current: Record<JointId, number>,
-  opts: { mirror?: boolean; locked?: Set<CaptureGroup>; minVisibility?: number } = {},
+  opts: { mirror?: boolean; locked?: Set<CaptureGroup>; minVisibility?: number; /** The body's lean to keep when the hips cannot be seen. */ rootAngle?: number } = {},
 ): CaptureResult {
   const min = opts.minVisibility ?? 0.5;
   const at = (name: keyof typeof P): Landmark | null => {
@@ -71,7 +71,8 @@ export function landmarksToPose(
   const torsoLocked = opts.locked?.has('torso');
   const rootAngle = torsoLocked ? null : world.pelvis;
   // Each joint's own angle is its bone's world angle minus its parent's. An unseen or locked part keeps its current angle.
-  const resolved: Record<string, number> = { pelvis: world.pelvis ?? 0 };
+  // Hips out of sight (a photo from the waist up): the body keeps its lean, and the chest turns from there.
+  const resolved: Record<string, number> = { pelvis: world.pelvis ?? opts.rootAngle ?? 0 };
   let seen = world.pelvis === null ? 0 : 1;
   for (const j of JOINTS) {
     const parent = resolved[j.parent] ?? 0;

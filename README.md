@@ -24,6 +24,8 @@ npm test           # unit tests
 3. **Act it out.** Open a panel, take a photo with the webcam or choose photos of yourself. The app finds your body
    and puts dots on it; drag any that are off. Your character copies the pose, in the angle you stand at.
    Each photo is a pose; the app moves from one pose to the next. Set how long each pose holds, and press Play.
+   **From the waist up works too** (a webcam at a desk): parts outside the photo keep the pose they had, and only
+   the dots inside the photo are shown.
 
 Also in a panel: **Background…**, **Flip**, the angle buttons, **Save as a pose** and **My poses** (any saved pose
 fits any character).

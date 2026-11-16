@@ -8,8 +8,12 @@ import { landmarksToPose, type Landmark } from './mapping';
 
 /** How far the neck and waist bend at most, in degrees, when the rig has no limit of its own. */
 export const SPINE_LIMIT = 70;
+/** Without hips in the picture the waist can only be guessed from the shoulders: a gentle lean at most. */
+export const WAIST_LIMIT_NO_HIPS = 30;
 
 export interface ActOptions {
+  /** The photo's size in pixels. Points outside it are guesses for parts out of the picture, and are ignored. */
+  size?: { w: number; h: number };
   /** Copy like a mirror, as the webcam shows you, rather than as the photo looks. */
   mirror?: boolean;
   /** Your own choices, kept when the dots move. */
@@ -19,7 +23,8 @@ export interface ActOptions {
   current?: ActedPose;
 }
 
-export function poseFromPoints(points: Landmark[], rig: Rig, opts: ActOptions = {}): ActedPose {
+export function poseFromPoints(allPoints: Landmark[], rig: Rig, opts: ActOptions = {}): ActedPose {
+  const points = inPicture(allPoints, opts.size);
   const has = VIEWS.filter((v) => rig.views[v]);
   const facing = readFacing(points, { mirror: opts.mirror });
   const view = opts.view && rig.views[opts.view] ? opts.view : nearestView(facing?.view ?? 'front', has);
@@ -27,15 +32,36 @@ export function poseFromPoints(points: Landmark[], rig: Rig, opts: ActOptions = 
   const flip = opts.flip ?? (facing ? flipFor(facing, drawing.faces ?? 'left') : false);
   // A flipped drawing turns everything around, so the photo is read the other way round too.
   const mirror = !!opts.mirror !== flip;
-  const current = opts.current?.view === view ? opts.current.angles : {};
-  const result = landmarksToPose(points, drawing, unlockedJoints(rig.level), current, { mirror });
+  // Parts the photo cannot see keep the pose they had, even when the angle changes: angles fit any drawing.
+  const current = opts.current?.angles ?? {};
+  const result = landmarksToPose(points, drawing, unlockedJoints(rig.level), current, { mirror, rootAngle: opts.current?.rootAngle ?? 0 });
   const angles = { ...current, ...result.angles };
   // A misread photo must not fold the character in half: the neck and waist bend at most this far
   // unless the rig sets its own limits. The dots stay where the tracker put them, so you can see and fix them.
+  const hips = [23, 24].every((i) => (points[i]?.visibility ?? 0) >= 0.5);
   for (const j of ['neck', 'waist']) {
-    if (angles[j] !== undefined && !rig.limits[j]) angles[j] = Math.max(-SPINE_LIMIT, Math.min(SPINE_LIMIT, angles[j]));
+    const limit = j === 'waist' && !hips ? WAIST_LIMIT_NO_HIPS : SPINE_LIMIT;
+    if (angles[j] !== undefined && !rig.limits[j]) angles[j] = Math.max(-limit, Math.min(limit, angles[j]));
   }
-  return { view, flip, rootAngle: result.rootAngle ?? 0, angles, swaps: opts.current?.swaps };
+  return { view, flip, rootAngle: result.rootAngle ?? opts.current?.rootAngle ?? 0, angles, swaps: opts.current?.swaps };
+}
+
+/**
+ * The tracker guesses where parts outside the photo would be. Those guesses are not seen: they are marked unseen,
+ * so a photo from the waist up leaves the legs (and, without hips, the body's lean) as they were.
+ */
+export function inPicture(points: Landmark[], size?: { w: number; h: number }): Landmark[] {
+  if (!size) return points;
+  const mx = size.w * 0.02, my = size.h * 0.02;
+  return points.map((p) => (p.x < -mx || p.y < -my || p.x > size.w + mx || p.y > size.h + my ? { ...p, visibility: 0 } : p));
+}
+
+/** Whether the photo shows the whole body, or only from the waist (or chest) up. */
+export function bodyShown(points: Landmark[], size?: { w: number; h: number }): 'full' | 'half' {
+  const seen = inPicture(points, size);
+  const knees = [25, 26].filter((i) => (seen[i]?.visibility ?? 0) >= 0.5).length;
+  const ankles = [27, 28].filter((i) => (seen[i]?.visibility ?? 0) >= 0.5).length;
+  return knees + ankles >= 2 ? 'full' : 'half';
 }
 
 /** A standing figure for a photo the app could not read, so you can drag the dots into place yourself. */

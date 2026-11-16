@@ -189,10 +189,20 @@ if (want('act')) {
   await page.click('#act-my-poses summary');
   await page.click('#act-my-poses .pose-row');
   ok('a saved pose can be put on another pose', await ev(() => { const ms = window.__act.p.moments, k = Object.keys(ms[0].poses)[0]; return JSON.stringify(ms[0].poses[k].angles) === JSON.stringify(ms[1].poses[k].angles); }));
+  // A photo from the waist up: the legs keep their pose, and no leg dots are shown.
+  const legsBefore = await ev(() => { const a = window.__act, ms = a.p.moments, k = Object.keys(ms[0].poses)[0]; return JSON.stringify([ms.at(-1).poses[k].angles.knee_L, ms.at(-1).poses[k].angles.hip_R]); });
+  await page.click('.act-pose >> nth=1 >> .act-pose-pick');
+  await choose(page, '#act-next', new URL('./fixtures/half-photo.png', import.meta.url).pathname);
+  await page.waitForFunction(() => window.__act.p.moments.length === 3, null, { timeout: 60000 });
+  await page.waitForTimeout(500);
+  ok('a photo from the waist up says so', await page.locator('#act-half').count() === 1);
+  ok('it shows no dots for parts outside the photo', await page.locator('[data-dot="25"], [data-dot="27"]').count() === 0);
+  ok('and the legs keep the pose they had', await ev(() => { const a = window.__act, ms = a.p.moments, k = Object.keys(ms[2].poses)[0]; return JSON.stringify([ms[2].poses[k].angles.knee_L, ms[2].poses[k].angles.hip_R]); }) === legsBefore, legsBefore);
+  await page.screenshot({ path: `${out}/act-half.png` });
   // Back on the storyboard, the panel shows its character.
   await page.click('#act-back');
   await page.waitForFunction(() => document.querySelector('.sb-panel img')?.src.startsWith('data:image/jpeg'), null, { timeout: 15000 });
-  ok('the storyboard panel now shows the acted character', /2 poses/.test(await page.textContent('.sb-panel >> nth=0 >> .sb-head')));
+  ok('the storyboard panel now shows the acted character', /3 poses/.test(await page.textContent('.sb-panel >> nth=0 >> .sb-head')));
   await page.screenshot({ path: `${out}/storyboard-acted.png` });
 }
 

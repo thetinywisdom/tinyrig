@@ -47,6 +47,7 @@ The owner rejected the earlier editor as too complex: **every new control has to
 | 1. 3/4 angle; reading the angle from a photo | Done. `quarter` view, art names, `readFacing()` (depth first, shoulder width as fallback), placeholder 3/4 drawing. |
 | 2. Act it out from photos | Done: photos and single webcam photos, dots, angle, flip, poses, holds, Play, background, saved poses. |
 | 3. Characters screen and new app shell | Done. Old editor deleted. |
+| 3b. Half body (from the waist up) | Done. Tracker guesses outside the photo are ignored (`inPicture`); unseen parts keep their pose across angles; without hips the waist leans 30° at most; `bodyShown()` labels the photo. |
 | 4. Webcam takes (a few seconds of video, key poses picked) | **Next.** |
 | 5. Video export of the storyboard | Not started. |
 | 6. Tune the angle thresholds on the owner's real photos | Waiting for photos. |

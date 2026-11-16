@@ -1,7 +1,7 @@
 // Act it out: a panel built from you. Choose photos (or take one with the webcam); the app finds your body
 // and draws dots on it; drag any that are off; the character copies the pose, in the angle you stand at.
 // Poses run left to right along the bottom; Play moves from one to the next.
-import { DOTS, BONES, poseFromPoints, standingPoints } from '../capture/act';
+import { bodyShown, DOTS, BONES, inPicture, poseFromPoints, standingPoints } from '../capture/act';
 import type { Landmark } from '../capture/mapping';
 import { detectPose } from '../capture/tracker';
 import { placeActor } from '../model/actor';
@@ -152,7 +152,7 @@ export class ActView {
         if (!points) { lost++; points = standingPoints(w, hgt); }
         const file = this.freeName(f.name);
         this.ctx.project.assets.set(`photos/${file}`, f.bytes);
-        const pose = poseFromPoints(points, rig, { mirror, current: prev ?? undefined });
+        const pose = poseFromPoints(points, rig, { mirror, size: { w, h: hgt }, current: prev ?? undefined });
         prev = pose;
         made.push({ id: uid(), hold: DEFAULT_HOLD, move: DEFAULT_MOVE, photo: file, size: { w, h: hgt }, points, mirror, actor: this.who, poses: { [this.who]: pose } });
       } catch {
@@ -194,7 +194,7 @@ export class ActView {
     const shoot = h('button', { class: 'primary', id: 'cam-shoot' }, 'Take the photo in 3 seconds');
     const overlay = h('div', { class: 'cam', role: 'dialog', 'aria-label': 'Webcam' },
       h('div', { class: 'cam-frame' }, video, count),
-      h('div', { class: 'cam-bar' }, h('span', { class: 'hint' }, 'Step back so your whole body is in view.'), h('span', { class: 'grow' }), h('button', { id: 'cam-close', onclick: close }, 'Close'), shoot));
+      h('div', { class: 'cam-bar' }, h('span', { class: 'hint' }, 'Your whole body, or from the waist up. From the waist up, the legs keep their pose.'), h('span', { class: 'grow' }), h('button', { id: 'cam-close', onclick: close }, 'Close'), shoot));
     document.body.appendChild(overlay);
     enter(overlay.firstElementChild as HTMLElement, 'scale(0.98)', 200, EASE_OUT);
     shoot.addEventListener('click', async () => {
@@ -220,7 +220,7 @@ export class ActView {
     if (!rig || !m.points || !castId) return;
     const old = m.poses[castId];
     const keep = (m as Moment & { keep?: { view?: ViewId; flip?: boolean } }).keep ?? {};
-    m.poses[castId] = poseFromPoints(m.points, rig, { mirror: m.mirror, view: keep.view, flip: keep.flip, current: old });
+    m.poses[castId] = poseFromPoints(m.points, rig, { mirror: m.mirror, size: m.size, view: keep.view, flip: keep.flip, current: old });
   }
   private setKeep(m: Moment, k: { view?: ViewId; flip?: boolean }) {
     const mm = m as Moment & { keep?: { view?: ViewId; flip?: boolean } };
@@ -327,6 +327,7 @@ export class ActView {
     const poses = this.ctx.project.poses;
     const left = h('section', { class: 'act-pane', 'aria-label': 'Your take' },
       h('div', { class: 'act-label' }, h('b', {}, 'Your take'), h('span', { class: 'muted' }, ` · pose ${this.cur + 1} of ${this.moments.length}`),
+        m.points && bodyShown(m.points, m.size) === 'half' ? h('span', { class: 'pill', id: 'act-half', title: 'Parts outside the photo keep the pose they had' }, 'From the waist up: the legs keep their pose') : null,
         h('span', { class: 'grow' }), m.points ? h('span', { class: 'hint' }, 'Drag a dot the app got wrong') : null),
       this.photoBox,
       h('div', { class: 'act-bar' },
@@ -376,8 +377,11 @@ export class ActView {
     svg.setAttribute('viewBox', `0 0 ${m.size.w} ${m.size.h}`);
     svg.setAttribute('aria-hidden', 'true');
     const frame = h('div', { class: 'act-photo-frame', style: `aspect-ratio:${m.size.w}/${m.size.h}` }, img, svg);
+    // Only what is in the picture: the tracker's guesses for parts outside it are not shown.
+    const seen = () => inPicture(m.points!, m.size);
     const drawBones = () => {
-      svg.replaceChildren(...BONES.filter(([a, b]) => m.points![a].visibility > 0.3 && m.points![b].visibility > 0.3).map(([a, b]) => {
+      const s2 = seen();
+      svg.replaceChildren(...BONES.filter(([a, b]) => s2[a].visibility > 0.3 && s2[b].visibility > 0.3).map(([a, b]) => {
         const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         l.setAttribute('x1', String(m.points![a].x)); l.setAttribute('y1', String(m.points![a].y));
         l.setAttribute('x2', String(m.points![b].x)); l.setAttribute('y2', String(m.points![b].y));
@@ -385,9 +389,10 @@ export class ActView {
       }));
     };
     drawBones();
+    const inside = seen();
     for (const d of DOTS) {
       const pt = m.points[d.i];
-      if (!pt) continue;
+      if (!pt || inside[d.i].visibility === 0) continue;
       const dot = h('button', {
         class: 'act-dot' + (pt.visibility < 0.5 ? ' unsure' : '') + ((pt as Landmark & { moved?: boolean }).moved ? ' moved' : ''),
         'aria-label': `${d.name}${pt.visibility < 0.5 ? ' (not sure)' : ''}`, 'data-dot': d.i,
