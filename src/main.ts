@@ -1,4 +1,5 @@
 // The app: three screens. The storyboard is home; a panel opens in Act it out; Characters is where joints are set.
+import './fonts.css';
 import './style.css';
 import { newStoryboard, type Panel } from './model/storyboard';
 import { emptyProject, filesToProject, projectToFiles, slug, type InFile, type Project } from './project/project';

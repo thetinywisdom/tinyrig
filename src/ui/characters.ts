@@ -15,6 +15,7 @@ import type { Project } from '../project/project';
 import { StageView } from '../render/stage';
 import { pictures } from '../render/thumb';
 import { h } from './dom';
+import { rigDrawing } from './icons';
 
 export interface CharactersContext {
   project: Project;
@@ -316,21 +317,25 @@ export class CharactersView {
     const kind = rig.nodes ? rig.kind : 'human';
     const layers = rv ? Object.entries(rv.pieces).filter(([, p]) => !p.variant && !p.shared).sort((a, b) => b[1].z - a[1].z) : [];
     const selected = nodes.find((n) => n.id === this.selNode);
+    const order = [root, ...skeletonOf({ nodes }).joints.map((j) => nodes.find((n) => n.id === j.id)!)];
+    const num = (bone: string | null) => { const i = order.findIndex((n) => n.bone === bone); return i < 0 ? '--' : String(i).padStart(2, '0'); };
     this.side.replaceChildren(
       h('section', {},
-        h('h2', {}, 'Rig'),
-        h('div', { class: 'seg chars-kind', role: 'group', 'aria-label': 'Start from' },
-          RIG_KINDS.map((k) => h('button', {
+        h('h2', {}, 'Rig', h('span', { class: 'muted' }, RIG_KIND_LABEL[kind ?? 'human'])),
+        h('div', { class: 'chars-kinds', role: 'group', 'aria-label': 'Start from' },
+          RIG_KINDS.map((k, i) => h('button', {
             class: kind === k ? 'selected' : '', 'data-kind': k, 'aria-pressed': String(kind === k),
             title: kind === k ? 'Start this rig over' : `Start from a ${RIG_KIND_LABEL[k].toLowerCase()} rig`,
             onclick: () => this.setKind(k),
-          }, RIG_KIND_LABEL[k]))),
-        h('div', { class: 'seg chars-kind', role: 'group', 'aria-label': 'Detail' },
-          LEVELS.map((l) => h('button', {
-            class: rig.level === l ? 'selected' : '', 'data-detail': l, 'aria-pressed': String(rig.level === l),
-            title: l === 'low' ? 'Fewest nodes: whole arms and legs' : l === 'medium' ? 'Adds the middle joints: elbows, knees' : 'Every node: also hands, feet and the chest',
-            onclick: () => this.setDetail(l),
-          }, DETAIL_LABEL[l])))),
+          }, h('span', {}, RIG_KIND_LABEL[k]), rigDrawing(k), h('span', { class: 'muted' }, `0${i + 1}`)))),
+        h('div', { class: 'chars-detail' },
+          h('div', { class: 'meter', role: 'group', 'aria-label': 'Detail' },
+            LEVELS.map((l, i) => h('button', {
+              class: (LEVELS.indexOf(rig.level) >= i ? 'on' : '') + (rig.level === l ? ' selected' : ''), 'data-detail': l, 'aria-pressed': String(rig.level === l),
+              title: `${DETAIL_LABEL[l]}: ${l === 'low' ? 'whole arms and legs' : l === 'medium' ? 'adds elbows and knees' : 'every node, also hands, feet and the chest'}`,
+              onclick: () => this.setDetail(l),
+            }, h('i', { style: `height:${16 + i * 15}px` }), DETAIL_LABEL[l][0]))),
+          h('div', { class: 'read' }, h('b', {}, String(nodes.length)), h('span', { class: 'px muted' }, `${DETAIL_LABEL[rig.level]} · nodes`)))),
       h('section', {},
         h('div', { class: 'chars-head' },
           h('h2', {}, 'Nodes'),
@@ -338,23 +343,24 @@ export class CharactersView {
             id: 'chars-add', class: this.adding ? 'selected' : '', 'aria-pressed': String(this.adding),
             onclick: () => { this.adding = !this.adding; this.note = ''; this.trial = null; this.render(); this.draw(); },
           }, '+ Add a node')),
-        h('ul', { class: 'chars-nodes' }, [root, ...skeletonOf({ nodes }).joints.map((j) => nodes.find((n) => n.id === j.id)!)].map((n) => {
+        h('ul', { class: 'chars-nodes' }, order.map((n, i) => {
           const placed = !n.parent || !!rv?.pivots[n.id];
           return h('li', {
             'data-node': n.id, class: (n.id === this.selNode ? 'sel' : '') + (placed ? '' : ' unplaced'),
+            title: n.parent ? (placed ? `Moves with ${this.nodeName(n.parent)}` : 'Not placed in this angle yet') : 'Moves everything',
             onclick: (e: MouseEvent) => {
               if ((e.target as HTMLElement).closest('button')) return;
               if (this.selLayer) { this.attach(this.selLayer, n); return; }
               this.selNode = n.id; this.note = ''; this.render(); this.draw();
             },
           },
+          h('div', { class: 'num' }, h('span', {}, String(i).padStart(2, '0')), h('span', { class: 'muted' }, n.parent ? (placed ? `↳${num(n.parent)}` : 'not here') : 'root')),
           h('input', {
             value: n.name, 'aria-label': `Name of ${n.name}`, spellcheck: false,
             onchange: (e: Event) => this.rename(n, (e.target as HTMLInputElement).value),
             onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { (e.target as HTMLInputElement).value = n.name; (e.target as HTMLInputElement).blur(); } },
           }),
-          h('span', { class: 'muted' }, n.parent ? (placed ? `on ${this.nodeName(n.parent)}` : 'not in this angle') : 'moves everything'),
-          n.parent ? h('button', { class: 'icon', title: `Remove ${n.name}`, 'aria-label': `Remove ${n.name}`, onclick: () => this.remove(n.id) }, '×') : h('span'));
+          n.parent ? h('button', { class: 'icon', title: `Remove ${n.name}`, 'aria-label': `Remove ${n.name}`, onclick: () => this.remove(n.id) }, '×') : null);
         })),
         selected && selected.parent ? h('p', { class: 'muted small' }, 'Delete removes it. Its parts then move with the node above it.') : null),
       h('section', {},
@@ -365,7 +371,7 @@ export class CharactersView {
             onclick: () => { this.selLayer = this.selLayer === name ? null : name; this.trial = null; this.note = ''; this.render(); this.draw(); },
           },
           h('b', {}, displayName(name)),
-          h('span', { class: 'muted' }, `→ ${this.nodeName(p.bone)}`))))),
+          h('span', { class: 'muted' }, `→ ${num(p.bone)} ${this.nodeName(p.bone)}`))))),
         h('p', { class: 'muted small' }, 'Name a layer and a node the same, and they attach by themselves.')),
     );
   }

@@ -122,7 +122,7 @@ export class StageView {
 
   async init(host: HTMLElement) {
     await this.app.init({
-      resizeTo: host, background: 0xdfe3ea, antialias: true,
+      resizeTo: host, backgroundAlpha: 0, antialias: true, // the page shows through around the paper
       resolution: window.devicePixelRatio || 1, autoDensity: true,
     });
     host.appendChild(this.app.canvas);

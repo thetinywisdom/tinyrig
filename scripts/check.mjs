@@ -105,8 +105,8 @@ if (want('characters')) {
   ok('a cat imports as a 4-legged rig', /4 legs rig/.test(await page.textContent('.review')), await page.textContent('.review'));
   await page.click('#open-editor');
   await page.waitForSelector('[data-layer="tail"]');
-  ok('the tail layer moves with the Tail node', /Tail\s*→ Tail/.test(await page.textContent('[data-layer="tail"]')));
-  ok('the front paw layer moves with L front paw', /→ L front paw/.test(await page.textContent('[data-layer="front_paw_L"]')));
+  ok('the tail layer moves with the Tail node', /Tail\s*→ \d+ Tail/.test(await page.textContent('[data-layer="tail"]')));
+  ok('the front paw layer moves with L front paw', /→ \d+ L front paw/.test(await page.textContent('[data-layer="front_paw_L"]')));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${out}/characters-cat.png` });
   // Bend the tail.
@@ -160,7 +160,7 @@ if (want('characters')) {
   // Named nodes and layers.
   ok('nodes have names: the left wrist node is "L hand"', await page.inputValue('[data-node="wrist_L"] input') === 'L hand');
   ok('names show on the drawing', (await page.textContent('.chars-marks')).includes('L hand'));
-  ok('layers show by name with the node that moves them', /L hand\s*→ L hand/.test(await page.textContent('[data-layer="hand_L"]')));
+  ok('layers show by name with the node that moves them', /L hand\s*→ \d+ L hand/.test(await page.textContent('[data-layer="hand_L"]')));
   // Click a layer, then a node: that node moves it.
   await page.click('[data-layer="hand_L"]');
   ok('picking a layer asks for its node', /click the node that moves L hand/.test(await page.textContent('#chars-hint')));
