@@ -14,7 +14,15 @@ export type RigKind = 'human' | 'two' | 'four' | 'custom';
 export const RIG_KINDS: RigKind[] = ['human', 'two', 'four', 'custom'];
 export const RIG_KIND_LABEL: Record<RigKind, string> = { human: 'Humanoid', two: '2 legs', four: '4 legs', custom: 'Custom' };
 /** How many nodes a starting rig has. Stored as the rig's level (low, medium, high). */
-export const DETAIL_LABEL: Record<RigLevel, string> = { low: 'Simple', medium: 'Medium', high: 'Complex' };
+export const DETAIL_LABEL: Record<RigLevel, string> = { low: 'Small', medium: 'Medium', high: 'Large' };
+/** S, M, L: the short names on the size buttons. */
+export const DETAIL_SHORT: Record<RigLevel, string> = { low: 'S', medium: 'M', high: 'L' };
+/** Where each size of rig bends. */
+export const DETAIL_BENDS: Record<RigLevel, string> = {
+  low: 'Bends at the neck, shoulders and hips',
+  medium: 'Bends at the neck, shoulders, elbows, hips and knees',
+  high: 'Bends at every joint, including waist, wrists and ankles',
+};
 
 /** The root node's id. Its point is the view's rootPivot. */
 export const ROOT_NODE = 'root';

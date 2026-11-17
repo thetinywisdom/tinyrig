@@ -80,7 +80,7 @@ describe('rigs of your own', () => {
     expect(guessKind(['head', 'tail', 'leg_L', 'leg_R', 'foot_L', 'foot_R', 'lower_leg_L'])).toBe('two');
   });
 
-  it('Simple, Medium and Complex rigs have fewer or more nodes', () => {
+  it('Small, Medium and Large rigs have fewer or more nodes', () => {
     expect(templateNodes('human', 'low').length).toBe(6);
     expect(templateNodes('human', 'medium').length).toBe(10);
     expect(templateNodes('human').length).toBe(15);

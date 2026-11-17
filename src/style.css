@@ -261,11 +261,6 @@ footer.hint::before { content: ''; width: 8px; height: 8px; border-radius: 50%; 
 .chars-kinds button.selected span:first-child { color: var(--accent); }
 .chars-kinds svg { width: 100%; height: 60px; }
 .chars-detail { display: flex; align-items: center; gap: 12px; }
-.chars-detail .meter { display: flex; gap: 6px; align-items: flex-end; }
-.chars-detail .meter button { width: 44px; padding: 0 0 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; font-family: var(--pixel); font-size: 11px; text-transform: uppercase; }
-.chars-detail .meter i { display: block; width: 26px; border: 1px solid var(--ink); border-radius: 3px; background: none; }
-.chars-detail .meter .on i { background: repeating-linear-gradient(var(--ink) 0 2px, transparent 2px 5px); }
-.chars-detail .meter .selected i { background: repeating-linear-gradient(var(--accent) 0 2px, transparent 2px 5px); border-color: var(--ink); }
 .chars-detail .read { margin-left: auto; text-align: right; }
 .chars-detail .read b { display: block; font-family: var(--pixel); font-weight: 400; font-size: 30px; line-height: 1; }
 .chars-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

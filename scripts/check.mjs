@@ -237,9 +237,9 @@ if (want('characters')) {
   for (let i = 0; i < 4; i++) await page.keyboard.press('Control+z');
   // Detail: Simple drops the elbows, knees, hands and feet; their layers move with the node above.
   await page.click('[data-detail="low"]');
-  ok('Simple: fewer nodes, the hand layer moves with the upper arm', await ev(() => { const r = window.__chars.rig(); return !r.nodes.some((n) => n.id === 'elbow_L') && window.__chars.rigView().pieces.hand_L.bone === 'upperarm_L'; }));
+  ok('S (small): fewer nodes, the hand layer moves with the upper arm', await ev(() => { const r = window.__chars.rig(); return !r.nodes.some((n) => n.id === 'elbow_L') && window.__chars.rigView().pieces.hand_L.bone === 'upperarm_L'; }));
   await page.click('[data-detail="high"]');
-  ok('Complex: every node is back, and the hand layer is on L hand again', await ev(() => window.__chars.rig().nodes.some((n) => n.id === 'wrist_L') && window.__chars.rigView().pieces.hand_L.bone === 'hand_L'));
+  ok('L (large): every node is back, and the hand layer is on L hand again', await ev(() => window.__chars.rig().nodes.some((n) => n.id === 'wrist_L') && window.__chars.rigView().pieces.hand_L.bone === 'hand_L'));
   await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
   // A missing angle is a way in: + Back imports a drawing for the back.
   ok('a missing angle offers to add it', /\+ back/i.test(await page.textContent('[data-add-view="back"]')));

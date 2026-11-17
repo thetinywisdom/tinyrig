@@ -6,7 +6,7 @@ import { importSvg, importSvgParts, viewOfFile } from '../import/svg';
 import { parsePartFileName, VIEWS, type RigLevel } from '../model/skeleton';
 import type { ImportResult, Issue, Rig } from '../model/types';
 import { h } from './dom';
-import { RIG_KIND_LABEL } from '../model/rig';
+import { DETAIL_BENDS, DETAIL_LABEL, RIG_KIND_LABEL } from '../model/rig';
 import { mountMatcher, unplacedLayers } from './matcher';
 
 export interface Imported { imp: ImportResult; rig: Rig; issues: Issue[] }
@@ -14,9 +14,9 @@ export type ImportMode = 'whole' | 'parts';
 type InFile = { name: string; data: ArrayBuffer };
 
 const LEVEL_CARDS: Record<RigLevel, { title: string; bends: string }> = {
-  low: { title: 'Simple', bends: 'Bends at the neck, shoulders and hips' },
-  medium: { title: 'Medium', bends: 'Bends at the neck, shoulders, elbows, hips and knees' },
-  high: { title: 'Complex', bends: 'Bends at every joint, including waist, wrists and ankles' },
+  low: { title: DETAIL_LABEL.low, bends: DETAIL_BENDS.low },
+  medium: { title: DETAIL_LABEL.medium, bends: DETAIL_BENDS.medium },
+  high: { title: DETAIL_LABEL.high, bends: DETAIL_BENDS.high },
 };
 
 const PLACEHOLDERS: { label: string; mode: ImportMode; files: string[] }[] = [

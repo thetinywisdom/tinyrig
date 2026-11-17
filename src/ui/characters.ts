@@ -5,7 +5,7 @@
 import { addAngle, applyKind, guessNodePoint, refreshPoints } from '../import/build';
 import { apply, boneMatrices, canBend, clampToLimit, restPose, swingAround } from '../model/pose';
 import {
-  attachByName, bonesBelow, DETAIL_LABEL, displayName, newNodeId, nodesOf, RIG_KIND_LABEL, RIG_KINDS, rootNode, skeletonOf, unlockedOf, viewBox,
+  attachByName, bonesBelow, DETAIL_BENDS, DETAIL_LABEL, DETAIL_SHORT, displayName, newNodeId, nodesOf, RIG_KIND_LABEL, RIG_KINDS, rootNode, skeletonOf, unlockedOf, viewBox,
   type RigKind,
 } from '../model/rig';
 import { newShot } from '../model/shot';
@@ -308,7 +308,7 @@ export class CharactersView {
     this.changed();
   }
 
-  /** Simple, Medium or Complex: fewer or more nodes. Your own nodes, names and points stay. */
+  /** Small, Medium or Large: fewer or more nodes. Your own nodes, names and points stay. */
   private setDetail(level: RigLevel) {
     const entry = this.entry(), rig = this.begin();
     if (!entry || !rig) return;
@@ -547,13 +547,14 @@ export class CharactersView {
             onclick: () => this.setKind(k),
           }, h('span', {}, RIG_KIND_LABEL[k]), rigDrawing(k), h('span', { class: 'muted' }, `0${i + 1}`)))),
         h('div', { class: 'chars-detail' },
-          h('div', { class: 'meter', role: 'group', 'aria-label': 'Detail' },
-            LEVELS.map((l, i) => h('button', {
-              class: (LEVELS.indexOf(rig.level) >= i ? 'on' : '') + (rig.level === l ? ' selected' : ''), 'data-detail': l, 'aria-pressed': String(rig.level === l),
-              title: `${DETAIL_LABEL[l]}: ${l === 'low' ? 'whole arms and legs' : l === 'medium' ? 'adds elbows and knees' : 'every node, also hands, feet and the chest'}`,
+          h('div', { class: 'seg', role: 'group', 'aria-label': 'Rig size' },
+            LEVELS.map((l) => h('button', {
+              class: rig.level === l ? 'selected' : '', 'data-detail': l, 'aria-pressed': String(rig.level === l),
+              'aria-label': DETAIL_LABEL[l], title: `${DETAIL_LABEL[l]}. ${DETAIL_BENDS[l]}.`,
               onclick: () => this.setDetail(l),
-            }, h('i', { style: `height:${16 + i * 15}px` }), DETAIL_LABEL[l][0]))),
-          h('div', { class: 'read' }, h('b', {}, String(nodes.length)), h('span', { class: 'px muted' }, `${DETAIL_LABEL[rig.level]} · nodes`)))),
+            }, DETAIL_SHORT[l]))),
+          h('div', { class: 'read' }, h('b', {}, String(nodes.length)), h('span', { class: 'px muted' }, `${DETAIL_LABEL[rig.level]} · nodes`))),
+        h('p', { class: 'muted small' }, `${DETAIL_BENDS[rig.level]}.`)),
       h('section', {},
         h('div', { class: 'chars-head' },
           h('h2', {}, 'Nodes'),
