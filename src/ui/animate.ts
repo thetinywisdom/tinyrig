@@ -826,10 +826,32 @@ export class AnimateView {
     return `background-image:url("${url}")`;
   }
 
-  /** A lane's name: click to pick it; drag it up or down to change what is in front. */
+  /** A lane's name: click to pick it; drag it up or down to change what is in front. From the keyboard: Enter picks
+   *  it (Enter again on a character opens its rig) and Alt+Up / Alt+Down moves it. */
   private laneName(entry: StackEntry, idx: number, label: string, count: string, on: boolean): HTMLElement {
-    const el = h('div', { class: 'nm' + (on ? ' on' : ''), 'data-stack': `${entry.kind}:${entry.id}`, title: entry.kind === 'cast' ? 'Drag up or down to change what is in front. Double-click to open its rig.' : 'Drag up or down to change what is in front' },
+    const key = `${entry.kind}:${entry.id}`;
+    const how = entry.kind === 'cast'
+      ? 'Drag up or down (or Alt+Up / Alt+Down) to change what is in front. Double-click, or Enter when picked, opens its rig.'
+      : 'Drag up or down (or Alt+Up / Alt+Down) to change what is in front.';
+    const el = h('button', { type: 'button', class: 'nm' + (on ? ' on' : ''), 'data-stack': key, 'aria-pressed': String(on), title: `${label}\n${how}` },
       h('span', { class: 'px' }, label), h('span', { class: 'px c' }, count));
+    const pick = () => {
+      this.sel = entry.kind === 'image' ? { kind: 'image', id: entry.id } : (this.laneOf(entry.id).poses.length ? { kind: 'pose', cast: entry.id, i: this.poseAt(entry.id, this.t) } : { kind: 'lane', cast: entry.id });
+      this.render();
+      this.focusLane(key);
+    };
+    const openRig = () => { const c = entry.kind === 'cast' ? this.castOf(entry.id) : null; if (c) this.ctx.toRig(c.character); };
+    const moveTo = (to: number) => {
+      const stack = stackOf(this.p);
+      to = Math.max(0, Math.min(stack.length - 1, to));
+      if (to === idx) return;
+      this.change(() => { const [it] = stack.splice(idx, 1); stack.splice(to, 0, it); this.p.stack = stack; });
+      this.focusLane(key);
+    };
+    el.addEventListener('keydown', (e) => {
+      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); moveTo(idx + (e.key === 'ArrowUp' ? -1 : 1)); return; }
+      if (e.key === 'Enter') { e.preventDefault(); if (on && entry.kind === 'cast') openRig(); else pick(); }
+    });
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       el.setPointerCapture(e.pointerId);
@@ -842,26 +864,22 @@ export class AnimateView {
         if (!moved) {
           // Two clicks in a row on a character's name: open its rig. (The first click redraws the timeline, so a
           // plain dblclick event would never arrive.)
-          const now = performance.now(), key = `${entry.kind}:${entry.id}`;
-          if (entry.kind === 'cast' && this.lastLaneClick?.key === key && now - this.lastLaneClick.t < 450) {
-            this.lastLaneClick = null;
-            const c = this.castOf(entry.id);
-            if (c) this.ctx.toRig(c.character);
-            return;
-          }
+          const now = performance.now();
+          if (entry.kind === 'cast' && this.lastLaneClick?.key === key && now - this.lastLaneClick.t < 450) { this.lastLaneClick = null; openRig(); return; }
           this.lastLaneClick = { key, t: now };
-          this.sel = entry.kind === 'image' ? { kind: 'image', id: entry.id } : (this.laneOf(entry.id).poses.length ? { kind: 'pose', cast: entry.id, i: this.poseAt(entry.id, this.t) } : { kind: 'lane', cast: entry.id });
-          this.render();
+          pick();
           return;
         }
-        const stack = stackOf(this.p), to = Math.max(0, Math.min(stack.length - 1, idx + Math.round((ev.clientY - y0) / rowH)));
-        if (to === idx) return;
-        this.change(() => { const [it] = stack.splice(idx, 1); stack.splice(to, 0, it); this.p.stack = stack; });
+        moveTo(idx + Math.round((ev.clientY - y0) / rowH));
       };
       el.addEventListener('pointermove', move);
       el.addEventListener('pointerup', up);
     });
     return el;
+  }
+  /** After a redraw, put keyboard focus back on the lane name it was on. */
+  private focusLane(key: string) {
+    this.tl.querySelector<HTMLElement>(`.nm[data-stack="${key}"]`)?.focus();
   }
   private laneTrack(el: HTMLElement, pick: (t: number) => void): HTMLElement {
     el.addEventListener('pointerdown', (e) => {

@@ -156,9 +156,9 @@ function showStart() {
 /** A fresh scene with the sample panels. */
 async function newScene() {
   close();
-  message('Setting up a new scene…');
+  message('Setting up a new episode…');
   project = emptyProject();
-  project.storyboard = newStoryboard('Untitled scene');
+  project.storyboard = newStoryboard('Untitled episode');
   folder = null;
   try { project.storyboard.panels.push(...await addSample(project)); } catch { /* an empty scene is fine */ }
   showStoryboard();
@@ -169,7 +169,7 @@ async function loadProject(files: Map<string, Uint8Array>, from: string) {
   message(`Opening ${from}…`);
   try {
     const next = await filesToProject(files, message);
-    if (!next.characters.length && !next.storyboard) throw new Error(`No scene found in ${from}.`);
+    if (!next.characters.length && !next.storyboard) throw new Error(`No episode found in ${from}. Choose the folder or zip this app saved.`);
     project = next;
     save();
   } catch (err) {
@@ -201,13 +201,13 @@ async function openFolder() {
 }
 
 const menu = () => [
-  { label: 'New scene', run: () => void newScene() },
+  { label: 'New episode', run: () => void newScene() },
   ...(canUseFolders() ? [
     { label: folder ? `Saving to folder “${folder.name}”. Choose another…` : 'Save to a folder…', run: async () => { const picked = await pickFolder(); if (picked) { folder = picked; save(); } } },
-    { label: 'Open a scene folder…', run: openFolder },
+    { label: 'Open an episode folder…', run: openFolder },
   ] : []),
-  { label: 'Export scene as zip', run: () => download(`${slug(project.storyboard?.name ?? 'scene')}.zip`, toZip(projectToFiles(project)), 'application/zip') },
-  { label: 'Open a scene zip…', run: pickZip },
+  { label: 'Export episode as zip', run: () => download(`${slug(project.storyboard?.name ?? 'episode')}.zip`, toZip(projectToFiles(project)), 'application/zip') },
+  { label: 'Open an episode zip…', run: pickZip },
 ];
 
 async function boot() {
@@ -218,7 +218,7 @@ async function boot() {
   }
   const stored = await loadFromBrowser();
   if (stored) {
-    message('Opening your scene…');
+    message('Opening your episode…');
     try { project = await filesToProject(stored, message); } catch { project = emptyProject(); }
   }
   if (!project.storyboard && !project.characters.length) { showStart(); return; }

@@ -3,7 +3,7 @@
 import { buildRig, levelIssues, refreshPoints } from '../import/build';
 import { importPsd } from '../import/psd';
 import { importSvg, importSvgParts, viewOfFile } from '../import/svg';
-import { parsePartFileName, type RigLevel } from '../model/skeleton';
+import { parsePartFileName, VIEWS, type RigLevel } from '../model/skeleton';
 import type { ImportResult, Issue, Rig } from '../model/types';
 import { h } from './dom';
 import { RIG_KIND_LABEL } from '../model/rig';
@@ -51,6 +51,15 @@ export async function readFiles(
     imp = await importSvg(text(svgs[0]), svgs[0].name, wanted, onProgress);
     for (const f of svgs.slice(1)) {
       const more = await importSvg(text(f), f.name, wanted, onProgress);
+      // A file named after a missing angle (momo_back.svg, saved by "+ Back") fills that angle with its first
+      // drawn view, the same way adding the angle did, even when the drawing inside says front.
+      const named = viewOfFile(f.name), first = VIEWS.find((v) => more.views[v]?.length);
+      if (named && first && !imp.views[named]?.length && !more.views[named]?.length) {
+        imp.views[named] = more.views[first]!.map((p) => ({ ...p, view: named }));
+        imp.issues.push(...more.issues);
+        imp.fileNames.push(...more.fileNames.filter((n) => !imp.fileNames.includes(n)));
+        continue;
+      }
       for (const [v, pieces] of Object.entries(more.views)) {
         const view = v as keyof typeof imp.views;
         if (imp.views[view]?.length) imp.issues.push({ severity: 'warn', text: `${f.name} and another file both hold the ${view} view; the first one is used. Name each file after its angle: momo_front.svg, momo_side.svg.` });

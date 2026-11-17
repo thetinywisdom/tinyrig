@@ -66,7 +66,7 @@ export class CharactersView {
   /** The snap point the dragged node sits on, drawn while dragging. */
   private snapping: Pt | null = null;
   private note = '';
-  private undo: { name: string; rig: string; copy?: boolean; had?: boolean }[] = [];
+  private undo: { name: string; rig: string; copy?: boolean; had?: boolean; also?: () => void }[] = [];
   private root = h('div', { class: 'chars' });
   private top = h('header', { class: 'act-top' });
   private list = h('aside', { class: 'chars-list', 'aria-label': 'Characters' });
@@ -149,6 +149,7 @@ export class CharactersView {
       for (const k of Object.keys(rig)) delete rig[k];
       Object.assign(rig, JSON.parse(last.rig));
     }
+    last.also?.();
     this.name = last.name;
     this.note = '';
     this.changed();
@@ -241,6 +242,9 @@ export class CharactersView {
         try {
           const added = ext === 'psd' ? await importPsd([{ name: f.name, data }]) : await importSvg(new TextDecoder().decode(data), f.name);
           this.begin();
+          // Undo takes the new file and its parts back out too, so a reopened project matches the rig.
+          const files = entry.files, before = entry.data.imp.views[view];
+          this.undo[this.undo.length - 1].also = () => { entry.files = files; if (before) entry.data.imp.views[view] = before; else delete entry.data.imp.views[view]; this.loaded.delete(name); };
           const rig = this.rig()!;
           addAngle(rig, entry.data.imp, added, view);
           entry.files = [...entry.files.filter((x) => x.name !== file.name), file];

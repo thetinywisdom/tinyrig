@@ -39,7 +39,7 @@ export class StoryboardView {
   private redoStack: Snapshot[] = [];
   private sketchUrls = new Map<string, { bytes: Uint8Array; url: string }>();
   private root = h('div', { class: 'storyboard' });
-  private grid = h('div', { class: 'sb-grid', role: 'list', 'aria-label': 'Panels' });
+  private grid = h('div', { class: 'sb-grid', role: 'list', 'aria-label': 'Scenes' });
   private top = h('header', { class: 'sb-top' });
   private hint = h('footer', { class: 'hint' }, 'Double-click a scene to open it. Drag to reorder. Ctrl+D duplicates, Delete removes, Ctrl+V pastes a sketch.');
   private toastEl = h('div', { class: 'toast', role: 'status', hidden: true });
@@ -170,7 +170,7 @@ export class StoryboardView {
     this.ctx.onChanged();
     this.render();
     if (rects) this.flip(rects);
-    if (made.length > 1) this.toast(`Added ${made.length} panels from sketches.`, false);
+    if (made.length > 1) this.toast(`Added ${made.length} scenes from sketches.`, false);
   }
 
   addPanel(at: number, animate = true) {
@@ -197,7 +197,7 @@ export class StoryboardView {
       if (p.shot && !this.sb.panels.some((q) => q.shot === p.shot)) this.ctx.project.shots = this.ctx.project.shots.filter((s) => s.name !== p.shot);
       this.selected = this.sb.panels[Math.min(i, this.sb.panels.length - 1)]?.id ?? null;
     }, animate);
-    this.toast(`Panel ${i + 1} deleted.`, true, !animate);
+    this.toast(`Scene ${i + 1} deleted.`, true, !animate);
   }
 
   /** A short message at the bottom, with Undo where it helps. */
@@ -218,15 +218,15 @@ export class StoryboardView {
     const { panels } = this.sb;
     if (!panels.length) {
       this.grid.replaceChildren(h('div', { class: 'sb-empty' },
-        h('p', {}, 'This scene has no panels yet.'),
+        h('p', {}, 'This episode has no scenes yet.'),
         h('div', { class: 'row' },
-          h('button', { class: 'primary', id: 'sb-first', onclick: () => this.addPanel(0) }, 'Add a panel'),
+          h('button', { class: 'primary', id: 'sb-first', onclick: () => this.addPanel(0) }, 'Add a scene'),
           h('button', { class: 'link', id: 'sb-import', onclick: () => this.ctx.characters() }, 'Characters')),
-        h('p', { class: 'meta' }, 'Or drop sketch files here: one panel per file, in filename order.')));
+        h('p', { class: 'meta' }, 'Or drop sketch files here: one scene per file, in filename order.')));
       return;
     }
     this.grid.replaceChildren(...panels.map((p, i) => this.renderPanel(p, i)),
-      h('button', { class: 'sb-add', id: 'sb-add', onclick: () => this.addPanel(panels.length) }, h('span', { 'aria-hidden': 'true' }, '+'), 'Add panel'));
+      h('button', { class: 'sb-add', id: 'sb-add', onclick: () => this.addPanel(panels.length) }, h('span', { 'aria-hidden': 'true' }, '+'), 'Add scene'));
     this.markSelection();
   }
 
@@ -253,8 +253,8 @@ export class StoryboardView {
     const anyAnimatedSketch = this.sb.panels.some((p) => this.animated(p) && p.sketch);
     this.top.replaceChildren(...[
       h('input', {
-        class: 'sb-name', id: 'scene-name', 'aria-label': 'Scene name', value: this.sb.name, spellcheck: false,
-        onchange: (e: Event) => { const v = (e.target as HTMLInputElement).value.trim() || 'Untitled scene'; this.change(() => { this.sb.name = v; }); },
+        class: 'sb-name', id: 'scene-name', 'aria-label': 'Episode name', value: this.sb.name, spellcheck: false,
+        onchange: (e: Event) => { const v = (e.target as HTMLInputElement).value.trim() || 'Untitled episode'; this.change(() => { this.sb.name = v; }); },
         onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } },
       }),
       h('span', { class: 'sb-summary', id: 'sb-summary' }, summary(this.sb, project.shots)),
@@ -313,7 +313,7 @@ export class StoryboardView {
     const secs = panelSeconds(p, project.shots);
     const el = h('article', {
       class: 'sb-panel', 'data-id': p.id, role: 'listitem', tabindex: 0,
-      'aria-label': `Panel ${i + 1}, ${secs} seconds${this.animated(p) ? ', animated' : ''}`,
+      'aria-label': `Scene ${i + 1}, ${secs} seconds${this.animated(p) ? ', animated' : ''}`,
     });
 
     // Duration: typed in, shown next to the panel number.
@@ -321,7 +321,7 @@ export class StoryboardView {
     const dur = this.animated(p) ? h('span', { class: 'sb-dur fixed', title: 'Set by the poses' }, `${secs}s`)
       : this.editing?.id === p.id && this.editing.field === 'duration'
       ? h('input', {
-          type: 'number', class: 'sb-dur-input', min: 0.25, step: 0.1, value: secs, 'aria-label': `Panel ${i + 1} length in seconds`,
+          type: 'number', class: 'sb-dur-input', min: 0.25, step: 0.1, value: secs, 'aria-label': `Scene ${i + 1} length in seconds`,
           onkeydown: (e: KeyboardEvent) => {
             if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
             if (e.key === 'Escape') { e.preventDefault(); this.editing = null; this.render(); }
@@ -349,13 +349,13 @@ export class StoryboardView {
     const pic = h('div', { class: 'sb-pic', style: `aspect-ratio:${size.w}/${size.h}` });
     const showFrame = this.animated(p) && !(this.sb.showSketches && p.sketch);
     if (showFrame) {
-      const img = h('img', { alt: `Frame from panel ${i + 1}`, draggable: false });
+      const img = h('img', { alt: `Frame from scene ${i + 1}`, draggable: false });
       const shot = compileScene(`panel:${p.id}`, p, size, { t: 0, minSeconds: 0.5 }), cached = pictures.cached(shot, 0);
       if (cached) img.src = cached;
       else void pictures.picture(project, shot, 480, 0).then((url) => { img.src = url; }).catch(() => undefined);
       pic.append(img);
     } else if (p.sketch && this.sketchUrl(p.sketch)) {
-      pic.append(h('img', { src: this.sketchUrl(p.sketch)!, alt: `Sketch for panel ${i + 1}`, draggable: false }));
+      pic.append(h('img', { src: this.sketchUrl(p.sketch)!, alt: `Sketch for scene ${i + 1}`, draggable: false }));
     } else {
       const input = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true,
         onchange: () => { const files = this.imagesIn(input.files); input.value = ''; void this.addSketches(files, p, true, true); } });
@@ -366,7 +366,7 @@ export class StoryboardView {
     // Notes: one free-text field. The panel shows the first lines; click to edit and see it all.
     const notes = this.editing?.id === p.id && this.editing.field === 'notes'
       ? h('textarea', {
-          class: 'sb-notes-edit', 'aria-label': `Panel ${i + 1} notes`, value: p.notes, rows: 4,
+          class: 'sb-notes-edit', 'aria-label': `Scene ${i + 1} notes`, value: p.notes, rows: 4,
           placeholder: 'Dialogue, action, camera, sound…',
           oninput: (e: Event) => { const t = e.target as HTMLTextAreaElement; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; },
           onkeydown: (e: KeyboardEvent) => {
@@ -385,7 +385,7 @@ export class StoryboardView {
         } }, h('span', { class: 'sb-notes-text' }, p.notes || 'Add notes'));
 
     el.append(
-      h('button', { class: 'sb-gap', title: `Add a panel before panel ${i + 1}`, 'aria-label': `Add a panel before panel ${i + 1}`,
+      h('button', { class: 'sb-gap', title: `Add a scene before scene ${i + 1}`, 'aria-label': `Add a scene before scene ${i + 1}`,
         onclick: (e: Event) => { e.stopPropagation(); this.addPanel(i); } }, '+'),
       head, pic, notes, facts);
     if (this.editing?.id === p.id) {

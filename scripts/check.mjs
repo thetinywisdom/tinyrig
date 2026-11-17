@@ -34,7 +34,7 @@ const fresh = async () => {
 // --- storyboard: start screen, sample, panels, undo, reorder, sketches ---------------------
 if (want('storyboard')) {
   const { context, page } = await fresh();
-  ok('a first visit shows New scene and Open scene', await page.locator('#new-scene').isVisible() && await page.locator('#open-scene').isVisible());
+  ok('a first visit shows New episode and Open episode', await page.locator('#new-scene').isVisible() && await page.locator('#open-scene').isVisible());
   await page.click('#new-scene');
   await page.waitForSelector('.sb-panel');
   const ids = () => page.$$eval('.sb-panel', (n) => n.map((e) => e.dataset.id));
@@ -42,7 +42,7 @@ if (want('storyboard')) {
   ok('a new scene has 3 sample panels', (await ids()).length === 3);
   await page.waitForFunction(() => document.querySelector('.sb-panel img')?.src.startsWith('data:image/jpeg'), null, { timeout: 15000 });
   ok('the animated sample scene shows its picture and cast', /animated/i.test(await page.textContent('.sb-panel >> nth=0 >> .sb-head')) && /placeholder/i.test(await page.textContent('.sb-panel >> nth=0')));
-  ok('the header counts panels', /· 3 panels$/.test(await page.textContent('#sb-summary')), await page.textContent('#sb-summary'));
+  ok('the header counts panels', /· 3 scenes$/.test(await page.textContent('#sb-summary')), await page.textContent('#sb-summary'));
   await page.screenshot({ path: `${out}/storyboard.png` });
   await page.click('.sb-panel >> nth=1 >> .sb-dur');
   await page.fill('.sb-dur-input', '3.2');
@@ -50,7 +50,7 @@ if (want('storyboard')) {
   ok('a sketch panel takes a typed length', (await page.textContent('.sb-panel >> nth=1 >> .sb-head')).includes('3.2s'));
   ok('an animated scene takes its length from its poses (no box to type in)', await page.locator('.sb-panel >> nth=0 >> .sb-dur-input').count() === 0 && await page.locator('.sb-panel >> nth=0 >> .sb-dur.fixed').count() === 1);
   await page.click('#sb-add');
-  ok('Add panel adds one at the end', (await ids()).length === 4);
+  ok('Add scene adds one at the end', (await ids()).length === 4);
   await page.click('.sb-panel >> nth=0 >> .sb-head');
   await page.keyboard.press('Control+d');
   ok('Ctrl+D duplicates a scene, poses and all', (await ids()).length === 5 && await sb(() => JSON.stringify(window.__sb.sb.panels[1].lanes) === JSON.stringify(window.__sb.sb.panels[0].lanes)));
@@ -84,7 +84,7 @@ if (want('import')) {
     const report = await page.$$eval('.issues li, .review .ok', (n) => n.map((e) => e.textContent));
     await page.click('#open-editor');
     await page.waitForSelector('.chars-tabs');
-    const views = await page.$$eval('.chars-tabs button:not([disabled])', (b) => b.map((x) => x.dataset.view));
+    const views = await page.$$eval('.chars-tabs button:not([disabled]):not([data-add-view])', (b) => b.map((x) => x.dataset.view));
     const svg = !label.startsWith('PSD');
     ok(`import ${label}: angles ${views.join(', ')}`, (svg ? views.join() === 'front,quarter,side' : views.length >= 2) && !report.some((r) => /^(Problem|Missing)/.test(r)), report.join(' | '));
     await page.screenshot({ path: `${out}/import-${label.split(' ')[0].toLowerCase()}.png` });
@@ -249,6 +249,7 @@ if (want('characters')) {
   await page.click('#match-done');
   ok('the new angle is added to the character, its file kept under the angle\'s name', await ev(() => { const e = window.__project().characters[0]; return !!e.data.rig.views.back && e.files.some((f) => /_back\.svg$/.test(f.name)); }));
   await page.keyboard.press('Control+z');
+  ok('undo takes the added angle and its file back out', await ev(() => { const e = window.__project().characters[0]; return !e.data.rig.views.back && !e.files.some((f) => /_back\.svg$/.test(f.name)); }));
   await page.click('.chars-tabs [data-view="front"]');
   // Starting rigs.
   await page.click('[data-kind="four"]');
@@ -366,6 +367,12 @@ if (want('act')) {
   await page.mouse.move(lane.x + 20, lane.y + lane.height / 2); await page.mouse.down();
   await page.mouse.move(lane.x + 20, lane.y + lane.height / 2 - 50, { steps: 6 }); await page.mouse.up();
   ok('dragging a lane up puts that layer in front', JSON.stringify(await order()) === '["image","cast"]', JSON.stringify(await order()));
+  // The same from the keyboard: Alt+Down moves the picked layer back, and focus stays on it.
+  await page.locator('.tl [data-stack^="image"]').focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  ok('Alt+Down on a layer name moves it back, from the keyboard', JSON.stringify(await order()) === '["cast","image"]' && await ev(() => document.activeElement?.dataset.stack?.startsWith("image")), JSON.stringify(await order()));
+  await page.keyboard.press('Alt+ArrowUp');
+  ok('Alt+Up puts it back in front', JSON.stringify(await order()) === '["image","cast"]');
   await page.keyboard.press('Control+z');
   await page.screenshot({ path: `${out}/act-layers.png` });
 

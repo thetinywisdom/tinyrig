@@ -1,8 +1,9 @@
 /* The look: an instrument panel. A grey body holding light tiles, 1px black lines, small pixel labels,
    one orange for what is picked. Names you type (scenes, notes, nodes) stay in a plain sans. */
 :root {
-  --body: #cfcfcb; --tile: #e9e9e5; --tile-hover: #f2f2ee; --paper: #f4f4f0; --ink: #111; --muted: #6b6b66; --hair: rgba(17, 17, 17, 0.16);
+  --body: #cfcfcb; --tile: #e9e9e5; --tile-hover: #f2f2ee; --paper: #f4f4f0; --ink: #111; --muted: #55554f; --hair: rgba(17, 17, 17, 0.16);
   --accent: #ff4f00; --accent-soft: #ffe2d4;
+  --accent-text: #b83800; /* orange for text on light surfaces: 4.8:1 on tile, where --accent is only 2.7:1 */
   --bg: var(--body); --surface: var(--tile); --line: var(--ink); /* older names */
   --r: 10px; --r-s: 7px; --gap: 8px;
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -92,7 +93,7 @@ footer.hint::before { content: ''; width: 8px; height: 8px; border-radius: 50%; 
 .start { min-height: 100%; display: grid; place-items: center; padding: 40px 24px; }
 .start-card { max-width: 560px; display: grid; gap: 14px; padding: 32px 36px; background: var(--tile); border: 1px solid var(--ink); border-radius: 14px; }
 .start-card h1 { font-size: 32px; line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
-.start-eyebrow { margin: 0; color: var(--accent); }
+.start-eyebrow { margin: 0; color: var(--accent-text); }
 .start-card .meta { margin: 0; line-height: 1.5; }
 .start-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .start-actions button { padding: 11px 18px; font-size: 15px; border-radius: var(--r); }
@@ -300,7 +301,7 @@ footer.hint::before { content: ''; width: 8px; height: 8px; border-radius: 50%; 
 .chars-marks .dot.sel { fill: var(--accent); }
 .chars-marks .dot.over { fill: var(--accent); stroke-width: 2.5; }
 .chars-marks .label { font: 400 11px/1 var(--pixel); text-transform: uppercase; fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 4px; stroke-linejoin: round; }
-.chars-marks .label.sel { fill: var(--accent); }
+.chars-marks .label.sel { fill: var(--accent-text); }
 
 /* --- Import ------------------------------------------------------------------------------ */
 .importer { max-width: 900px; margin: 16px auto; padding: 28px 30px 40px; background: var(--tile); border: 1px solid var(--ink); border-radius: 14px; }
@@ -313,7 +314,7 @@ footer.hint::before { content: ''; width: 8px; height: 8px; border-radius: 50%; 
 .mode p { margin: 0; line-height: 1.45; }
 .mode h3 { margin: 0; color: var(--ink); }
 .status { min-height: 20px; color: var(--muted); font-family: var(--pixel); font-size: 11px; text-transform: uppercase; }
-.status.error { color: var(--accent); }
+.status.error { color: var(--accent-text); }
 .review h2 { margin-top: 24px; }
 .review h3 { margin-top: 20px; }
 .level { background: var(--paper); border: 1px solid var(--ink); border-radius: var(--r-s); padding: 10px 12px; }

@@ -59,6 +59,8 @@ export const sizeOf = (sb: Storyboard): ProjectSize => sb.size ?? DEFAULT_SIZE;
 /** Bring an older storyboard up to date: acted panels move onto lanes and layers. */
 export function upgradeStoryboard(sb: Storyboard): Storyboard {
   for (const p of sb.panels) upgradeScene(p);
+  // The whole project used to be called a scene too.
+  if (sb.name === 'Untitled scene') sb.name = 'Untitled episode';
   return sb;
 }
 
@@ -66,7 +68,7 @@ export const DEFAULT_DURATION = 3;
 export const MIN_DURATION = 0.25;
 
 export const newPanel = (id: string, fields: Partial<Panel> = {}): Panel => ({ id, notes: '', duration: DEFAULT_DURATION, ...fields });
-export const newStoryboard = (name = 'Untitled scene'): Storyboard => ({ name, panels: [] });
+export const newStoryboard = (name = 'Untitled episode'): Storyboard => ({ name, panels: [] });
 
 const shotOf = (panel: Panel, shots: Shot[]) => (panel.shot ? shots.find((s) => s.name === panel.shot) : undefined);
 
@@ -96,7 +98,7 @@ export function formatRuntime(seconds: number): string {
 /** Header line: "1:48 · 27 panels". */
 export function summary(sb: Storyboard, shots: Shot[]): string {
   const n = sb.panels.length;
-  return `${formatRuntime(runtimeSeconds(sb, shots))} · ${n} ${n === 1 ? 'panel' : 'panels'}`;
+  return `${formatRuntime(runtimeSeconds(sb, shots))} · ${n} ${n === 1 ? 'scene' : 'scenes'}`;
 }
 
 /** Move the panel at `from` so it ends up at index `to` (in the list after removal). */
