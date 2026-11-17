@@ -401,24 +401,24 @@ export class AnimateView {
         h('p', { class: 'muted' }, 'Do the pose yourself. The app finds your body, and the character copies it.'),
         h('div', { class: 'act-choices' }, ...this.recordControls()),
         h('div', { class: 'act-choices' },
-          h('button', { id: 'act-webcam', onclick: () => void this.webcamPhoto() }, 'One webcam photo'),
+          h('button', { id: 'act-webcam', onclick: () => void this.webcamPhoto() }, 'Webcam photo'),
           h('button', { id: 'act-photos', onclick: () => this.choosePhotos() }, 'Choose photos…')),
-        h('div', { class: 'act-steps' },
-          h('span', {}, h('b', {}, '1 · Act'), 'record a take, or pose for photos'),
-          h('span', {}, h('b', {}, '2 · Check the dots'), 'drag any that are off'),
-          h('span', {}, h('b', {}, '3 · The character'), 'copies you, in the same angle'))));
+        h('ol', { class: 'act-steps' },
+          h('li', {}, h('b', {}, 'Act'), 'Record a take, or pose for photos.'),
+          h('li', {}, h('b', {}, 'Check the dots'), 'Drag any that are off.'),
+          h('li', {}, h('b', {}, 'The character'), 'Copies you, in the same angle.'))));
       return;
     }
     const lane = this.laneOf(castId), i = (s as { i: number }).i;
     this.left.replaceChildren(
       h('div', { class: 'act-label' }, h('b', {}, 'Your take'), h('span', { class: 'chip k' }, name), h('span', { class: 'muted px' }, `pose ${i + 1} of ${lane.poses.length}`),
         lp.points && bodyShown(lp.points, lp.size) === 'half' ? h('span', { class: 'pill', id: 'act-half', title: 'Parts outside the photo keep the pose they had' }, 'Waist up') : null,
-        h('span', { class: 'grow' }), lp.points ? h('span', { class: 'hint px' }, 'Drag a dot the app got wrong') : null),
+        h('span', { class: 'grow' }), lp.points ? h('span', { class: 'hint' }, 'Drag a dot the app got wrong.') : null),
       this.photoBox,
       h('div', { class: 'act-bar' },
         ...this.recordControls(),
-        h('button', { id: 'act-more-webcam', onclick: () => void this.webcamPhoto() }, 'Photo'),
-        h('button', { id: 'act-more-photos', onclick: () => this.choosePhotos() }, 'Photos…'),
+        h('button', { id: 'act-more-webcam', onclick: () => void this.webcamPhoto() }, 'Webcam photo'),
+        h('button', { id: 'act-more-photos', onclick: () => this.choosePhotos() }, 'Choose photos…'),
         lp.photo ? h('button', { id: 'act-retake', onclick: () => this.retake() }, 'Replace photo') : null,
         h('span', { class: 'grow' }),
         h('label', { class: 'act-num' }, h('span', {}, 'Hold'), h('input', {
@@ -433,7 +433,7 @@ export class AnimateView {
   /** Record and its Every frame switch: they belong with the webcam, where you act. */
   private recordControls(): HTMLElement[] {
     return [
-      h('button', { id: 'act-record', class: 'rec primary', onclick: () => void this.startRecording(), title: 'Act it out live: the character follows you, and the take lands on the timeline' }, 'Record'),
+      h('button', { id: 'act-record', class: 'rec', onclick: () => void this.startRecording(), title: 'Act it out live: the character follows you, and the take lands on the timeline' }, 'Record'),
       h('label', { class: 'rec-every', title: 'Off: the take becomes key poses you can edit. On: every frame, as acted.' },
         h('input', { type: 'checkbox', id: 'rec-every', checked: this.everyFrame, onchange: (e: Event) => { this.everyFrame = (e.target as HTMLInputElement).checked; } }), h('span', { class: 'px' }, 'Every frame')),
     ];
@@ -564,7 +564,9 @@ export class AnimateView {
         h('button', { class: 'primary', id: 'cam-key', onclick: () => this.change(() => { const k = this.keyHere(); this.sel = { kind: 'camera', id: k.id }; }) }, '+ Key here'));
     }
     if (s?.kind !== 'camera' && lp && castId) {
-      items.push(
+      // The picked pose: its own group, set apart from the scene buttons.
+      items.push(h('div', { class: 'bar-group', role: 'group', 'aria-label': 'This pose' },
+        h('span', { class: 'muted px' }, 'Pose'),
         views.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Angle' }, views.map((v) => h('button', {
           class: lp.pose.view === v ? 'selected' : '', 'data-view': v,
           onclick: () => this.change(() => { if (lp.points) this.setKeep(lp, castId, { view: v }); else lp.pose.view = v; }),
@@ -573,10 +575,11 @@ export class AnimateView {
         h('button', { id: 'act-save-pose', onclick: () => this.savePose() }, 'Save pose'),
         poses.length ? h('details', { class: 'menu', id: 'act-my-poses' }, h('summary', {}, 'My poses'),
           h('div', { class: 'menu-items' }, poses.map((sp) => h('button', { class: 'pose-row', onclick: (e: Event) => { (e.target as HTMLElement).closest('details')!.removeAttribute('open'); this.applySaved(sp); } },
-            sp.thumb ? h('img', { src: sp.thumb, alt: '' }) : h('span', { class: 'no-thumb' }), sp.name)))) : null);
+            sp.thumb ? h('img', { src: sp.thumb, alt: '' }) : h('span', { class: 'no-thumb' }), sp.name)))) : null));
     }
     const cast = this.ctx.project.characters;
-    items.push(h('details', { class: 'menu', id: 'add-character' }, h('summary', {}, '+ Character'),
+    const sceneGroup: Node[] = [];
+    sceneGroup.push(h('details', { class: 'menu', id: 'add-character' }, h('summary', {}, '+ Character'),
       h('div', { class: 'menu-items' },
         cast.length ? h('p', { class: 'meta save-status px' }, 'Put on the canvas, inside the camera') : h('p', { class: 'meta save-status' }, 'Your cast is empty.'),
         cast.map((c) => h('button', { 'data-put': c.name, onclick: (e: Event) => {
@@ -584,8 +587,9 @@ export class AnimateView {
           this.change(() => { const id = this.castCharacter(c.name); if (id) this.sel = { kind: 'lane', cast: id }; });
         } }, c.name)),
         h('button', { onclick: () => this.ctx.toRig() }, 'Import or rig a character…'))));
-    items.push(h('button', { id: 'add-image', onclick: () => this.pickFiles('image/*', true, (f) => this.addImages(f)) }, '+ Image'),
+    sceneGroup.push(h('button', { id: 'add-image', onclick: () => this.pickFiles('image/*', true, (f) => this.addImages(f)) }, '+ Image'),
       h('button', { id: 'fit-camera', onclick: () => { this.fitted = false; void this.drawStage(); } }, 'Fit'));
+    items.push(h('div', { class: 'bar-group', role: 'group', 'aria-label': 'Scene' }, ...sceneGroup));
     this.stageBar.replaceChildren(...items.filter((n): n is Node => !!n));
   }
 
@@ -1022,7 +1026,7 @@ export class AnimateView {
       h('div', { class: 'act-label' }, h('span', { class: 'rec-dot' }), h('b', {}, 'Recording'), h('span', { class: 'chip k' }, this.castOf(castId)!.character), clock, h('span', { class: 'grow' }),
         h('span', { class: 'px muted' }, this.everyFrame ? 'every frame' : 'key poses')),
       h('div', { class: 'rec-frame' }, video, count),
-      h('div', { class: 'act-bar' }, h('span', { class: 'hint px' }, 'Act it out. Space or Stop ends the take.'), h('span', { class: 'grow' }),
+      h('div', { class: 'act-bar' }, h('span', { class: 'hint' }, 'Act it out. Space or Stop ends the take.'), h('span', { class: 'grow' }),
         h('button', { class: 'primary', id: 'rec-stop', onclick: () => this.stopRecording() }, '■ Stop')));
     this.rec = { cast: castId, at: this.t, view, stream, video, started: null, samples: [], live: null, stopped: false, clock, found: 0 };
     this.render();

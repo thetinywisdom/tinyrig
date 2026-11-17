@@ -521,18 +521,22 @@ export class CharactersView {
     const order = [root, ...skeletonOf({ nodes }).joints.map((j) => nodes.find((n) => n.id === j.id)!)];
     const num = (bone: string | null) => { const i = order.findIndex((n) => n.bone === bone); return i < 0 ? '--' : String(i).padStart(2, '0'); };
     const sc = this.ctx.scene, name = this.name!;
-    const tweak = sc ? h('section', { class: 'chars-tweak' + (this.tweaked(name) ? ' on' : '') },
-      h('h2', {}, `${name} in this scene`, h('span', { class: 'muted' }, this.tweaked(name) ? 'tweaked' : 'shared')),
-      h('p', { class: 'small' }, this.tweaked(name)
-        ? 'Changes here stay in this scene. The shared rig, used by every other scene, is as it was.'
-        : 'This is the shared rig. Change anything and this scene gets its own copy; other scenes keep the shared one.'),
-      this.tweaked(name) ? h('div', { class: 'act-bar' },
-        h('button', { id: 'rig-reset', onclick: () => this.resetToShared() }, 'Reset to shared'),
-        h('button', { id: 'rig-save-shared', class: 'primary', onclick: () => this.saveToShared() }, 'Save to shared')) : null,
-      h('div', { class: 'act-bar' }, h('button', { id: 'rig-remove-cast', onclick: () => sc.removeCast(name) }, 'Remove from this scene'))) : null;
-    const danger = this.ctx.deleteCharacter ? h('section', { class: 'chars-danger' },
-      h('button', { id: 'char-delete', onclick: () => this.deleteCharacter(name) }, `Delete ${name}`),
-      h('p', { class: 'muted small' }, sc ? 'Deletes it from the cast and every scene. Undo brings it back.' : 'Deletes it from the cast and from every scene it is in. Undo brings it back.')) : null;
+    // In a scene: one line saying whose rig this is (shared, or this scene's copy), with its two actions.
+    const tw = sc ? this.tweaked(name) : false;
+    const tweak = sc ? h('section', { class: 'chars-tweak' + (tw ? ' on' : '') },
+      h('div', { class: 'tweak-row' },
+        h('span', { class: 'tweak-text', title: tw
+          ? 'Changes here stay in this scene. The shared rig, used by every other scene, is as it was.'
+          : 'Change anything and this scene gets its own copy; other scenes keep the shared one.' },
+          tw ? h('b', {}, 'Tweaked in this scene') : h('b', {}, 'Shared rig'),
+          tw ? ' Other scenes keep the shared one.' : ' Changes here make a copy for this scene.'),
+        tw ? h('button', { id: 'rig-reset', onclick: () => this.resetToShared() }, 'Reset') : null,
+        tw ? h('button', { id: 'rig-save-shared', onclick: () => this.saveToShared() }, 'Save to shared') : null)) : null;
+    const danger = (sc || this.ctx.deleteCharacter) ? h('section', { class: 'chars-danger' },
+      h('div', { class: 'act-bar' },
+        sc ? h('button', { id: 'rig-remove-cast', onclick: () => sc.removeCast(name) }, 'Remove from this scene') : null,
+        this.ctx.deleteCharacter ? h('button', { id: 'char-delete', onclick: () => this.deleteCharacter(name) }, `Delete ${name}`) : null),
+      h('p', { class: 'muted small' }, sc ? 'Remove takes it out of this scene only. Delete takes it out of the cast and every scene. Undo brings either back.' : 'Deletes it from the cast and from every scene it is in. Undo brings it back.')) : null;
     this.side.replaceChildren(...[tweak,
       h('section', {},
         h('h2', {}, 'Rig', h('span', { class: 'muted' }, RIG_KIND_LABEL[kind ?? 'human'])),
@@ -576,7 +580,7 @@ export class CharactersView {
           }),
           n.parent ? h('button', { class: 'icon', title: `Remove ${n.name}`, 'aria-label': `Remove ${n.name}`, onclick: () => this.remove(n.id) }, '×') : null);
         })),
-        selected && selected.parent ? h('p', { class: 'muted small' }, 'Delete removes it. Its parts then move with the node above it.') : null),
+        selected && selected.parent ? h('p', { class: 'muted small' }, `× or the Delete key removes ${selected.name}. Its parts then move with the node above it.`) : null),
       h('section', { class: 'chars-snap' },
         h('h2', {}, 'Snap', h('label', { class: 'snap-toggle' }, h('input', { type: 'checkbox', id: 'snap-on', checked: this.snapOn, onchange: (e: Event) => this.setSnap((e.target as HTMLInputElement).checked) }), h('span', { class: 'px' }, 'while dragging'))),
         selected && this.layerBox(selected.bone)
